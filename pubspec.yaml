@@ -1,0 +1,20 @@
+name: ibkr_trade_mcp
+description: Model Context Protocol (MCP) server for Interactive Brokers.
+version: 0.1.0
+homepage: https://github.com/Aloshanai/ibkr_trade_mcp
+repository: https://github.com/Aloshanai/ibkr_trade_mcp
+issue_tracker: https://github.com/Aloshanai/ibkr_trade_mcp/issues
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  json_rpc_2: ^3.0.2
+  ib_trade_dart:
+    git:
+      url: https://github.com/Aloshanai/ib_trade_dart.git
+      ref: main
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.25.6
