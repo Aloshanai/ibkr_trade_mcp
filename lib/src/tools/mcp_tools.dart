@@ -106,6 +106,36 @@ class McpToolRegistry {
           'required': ['replyId', 'confirmed'],
         },
       },
+      {
+        'name': 'search_contracts',
+        'description':
+            'Search for IBKR securities (stocks, ETFs, options) by ticker symbol or company name to obtain contract IDs (conid).',
+        'inputSchema': {
+          'type': 'object',
+          'properties': {
+            'query': {
+              'type': 'string',
+              'description': 'Ticker symbol or company name (e.g. AAPL, Tesla)',
+            },
+          },
+          'required': ['query'],
+        },
+      },
+      {
+        'name': 'get_market_data',
+        'description':
+            'Retrieve real-time market data snapshot (last price, bid, ask, volume, daily range) for a specified contract ID (conid).',
+        'inputSchema': {
+          'type': 'object',
+          'properties': {
+            'conid': {
+              'type': 'integer',
+              'description': 'Contract ID of the security (e.g. 265598 for AAPL)',
+            },
+          },
+          'required': ['conid'],
+        },
+      },
     ];
   }
 
@@ -126,6 +156,10 @@ class McpToolRegistry {
           return await _executePlaceOrder(args);
         case 'reply_to_challenge':
           return await _executeReplyToChallenge(args);
+        case 'search_contracts':
+          return await _executeSearchContracts(args);
+        case 'get_market_data':
+          return await _executeGetMarketData(args);
         default:
           return McpResponseBuilder.buildToolErrorResponse(
               'Unknown tool name: $name');
@@ -241,6 +275,47 @@ class McpToolRegistry {
     } else {
       return McpResponseBuilder.buildToolErrorResponse(
           'Failed to submit reply to challenge $replyId');
+    }
+  }
+
+  Future<Map<String, dynamic>> _executeSearchContracts(
+      Map<String, dynamic> args) async {
+    final query = args['query']?.toString();
+    if (query == null || query.isEmpty) {
+      return McpResponseBuilder.buildToolErrorResponse(
+          'Missing required argument: query');
+    }
+
+    final uri = _config.baseHttpUri.resolve('iserver/secdef/search');
+    final res = await _client.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'symbol': query, 'name': true}),
+    );
+
+    if (res.statusCode == 200) {
+      return McpResponseBuilder.buildToolSuccessResponse(res.body);
+    } else {
+      return _buildErrorFromResponse(res);
+    }
+  }
+
+  Future<Map<String, dynamic>> _executeGetMarketData(
+      Map<String, dynamic> args) async {
+    final conid = args['conid'];
+    if (conid == null) {
+      return McpResponseBuilder.buildToolErrorResponse(
+          'Missing required argument: conid');
+    }
+
+    final uri = _config.baseHttpUri
+        .resolve('iserver/marketdata/snapshot?conids=$conid&fields=31,84,86,88,85');
+    final res = await _client.get(uri);
+
+    if (res.statusCode == 200) {
+      return McpResponseBuilder.buildToolSuccessResponse(res.body);
+    } else {
+      return _buildErrorFromResponse(res);
     }
   }
 
