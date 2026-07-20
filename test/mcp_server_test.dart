@@ -50,6 +50,8 @@ void main() {
       expect(toolNames, contains('get_positions'));
       expect(toolNames, contains('place_order'));
       expect(toolNames, contains('reply_to_challenge'));
+      expect(toolNames, contains('search_contracts'));
+      expect(toolNames, contains('get_market_data'));
     });
 
     test('callTool returns error for unknown tool names', () async {
@@ -62,6 +64,12 @@ void main() {
       final res = await registry.callTool('get_positions', {});
       expect(res['isError'], isTrue);
       expect(res['content'].first['text'], contains('Missing required argument: accountId'));
+    });
+
+    test('callTool search_contracts returns error if missing query argument', () async {
+      final res = await registry.callTool('search_contracts', {});
+      expect(res['isError'], isTrue);
+      expect(res['content'].first['text'], contains('Missing required argument: query'));
     });
   });
 }
