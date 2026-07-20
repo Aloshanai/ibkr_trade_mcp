@@ -1,0 +1,263 @@
+import 'dart:convert';
+import 'package:ib_trade_core/ib_trade_core.dart';
+import '../protocol/mcp_protocol.dart';
+import '../utils/logger.dart';
+
+/// Class managing declaration and execution of MCP tools using `ib_trade_core`.
+class McpToolRegistry {
+  final CookieClient _client;
+  final GatewayConfig _config;
+
+  McpToolRegistry({
+    required CookieClient client,
+    required GatewayConfig config,
+  })  : _client = client,
+        _config = config;
+
+  /// Returns the array of tool definitions announced during `tools/list`.
+  List<Map<String, dynamic>> listTools() {
+    return [
+      {
+        'name': 'get_session_status',
+        'description':
+            'Retrieve the current Interactive Brokers (IBKR) connection status, authentication state, and logged-in username.',
+        'inputSchema': {
+          'type': 'object',
+          'properties': {},
+        },
+      },
+      {
+        'name': 'list_accounts',
+        'description':
+            'Fetch all trading accounts associated with the active IBKR session.',
+        'inputSchema': {
+          'type': 'object',
+          'properties': {},
+        },
+      },
+      {
+        'name': 'get_positions',
+        'description':
+            'Fetch current portfolio positions (stocks, options, cash) for a specified trading account.',
+        'inputSchema': {
+          'type': 'object',
+          'properties': {
+            'accountId': {
+              'type': 'string',
+              'description': 'The target IBKR trading account ID (e.g. DU123456)',
+            },
+          },
+          'required': ['accountId'],
+        },
+      },
+      {
+        'name': 'place_order',
+        'description':
+            'Submit a trade order (buy/sell equities or options) to the IBKR Gateway.',
+        'inputSchema': {
+          'type': 'object',
+          'properties': {
+            'accountId': {
+              'type': 'string',
+              'description': 'Trading account ID',
+            },
+            'conid': {
+              'type': 'integer',
+              'description': 'Contract ID of the security (e.g. 265598 for AAPL)',
+            },
+            'side': {
+              'type': 'string',
+              'enum': ['BUY', 'SELL'],
+              'description': 'Order side (BUY or SELL)',
+            },
+            'orderType': {
+              'type': 'string',
+              'enum': ['LMT', 'MKT', 'STP'],
+              'description': 'Type of order',
+            },
+            'price': {
+              'type': 'number',
+              'description': 'Limit price (required for LMT and STP orders)',
+            },
+            'quantity': {
+              'type': 'number',
+              'description': 'Number of shares/contracts',
+            },
+          },
+          'required': ['accountId', 'conid', 'side', 'orderType', 'quantity'],
+        },
+      },
+      {
+        'name': 'reply_to_challenge',
+        'description':
+            'Submit a confirmation reply (accept or decline) to an execution warning challenge prompt returned by IBKR.',
+        'inputSchema': {
+          'type': 'object',
+          'properties': {
+            'replyId': {
+              'type': 'string',
+              'description': 'Unique challenge ID (e.g. c_12345)',
+            },
+            'confirmed': {
+              'type': 'boolean',
+              'description': 'Set to true to confirm risk disclosure, or false to cancel',
+            },
+          },
+          'required': ['replyId', 'confirmed'],
+        },
+      },
+    ];
+  }
+
+  /// Executes a requested tool by name with arguments.
+  Future<Map<String, dynamic>> callTool(
+      String name, Map<String, dynamic> args) async {
+    McpLogger.info('Executing tool: $name with args: $args');
+
+    try {
+      switch (name) {
+        case 'get_session_status':
+          return await _executeGetSessionStatus();
+        case 'list_accounts':
+          return await _executeListAccounts();
+        case 'get_positions':
+          return await _executeGetPositions(args);
+        case 'place_order':
+          return await _executePlaceOrder(args);
+        case 'reply_to_challenge':
+          return await _executeReplyToChallenge(args);
+        default:
+          return McpResponseBuilder.buildToolErrorResponse(
+              'Unknown tool name: $name');
+      }
+    } catch (e, st) {
+      McpLogger.error('Unhandled exception executing tool $name', e, st);
+      return McpResponseBuilder.buildToolErrorResponse('Tool error: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>> _executeGetSessionStatus() async {
+    final uri = _config.baseHttpUri.resolve('iserver/auth/status');
+    final res = await _client.get(uri);
+
+    if (res.statusCode == 200) {
+      final parsed = _safeJsonDecode(res.body);
+      if (parsed is Map<String, dynamic>) {
+        final status = AuthStatus.fromJson(parsed);
+        return McpResponseBuilder.buildToolSuccessResponse(status.toString());
+      }
+      return McpResponseBuilder.buildToolSuccessResponse(res.body);
+    } else {
+      return _buildErrorFromResponse(res);
+    }
+  }
+
+  Future<Map<String, dynamic>> _executeListAccounts() async {
+    final uri = _config.baseHttpUri.resolve('iserver/accounts');
+    final res = await _client.get(uri);
+
+    if (res.statusCode == 200) {
+      return McpResponseBuilder.buildToolSuccessResponse(res.body);
+    } else {
+      return _buildErrorFromResponse(res);
+    }
+  }
+
+  Future<Map<String, dynamic>> _executeGetPositions(
+      Map<String, dynamic> args) async {
+    final acctId = args['accountId']?.toString();
+    if (acctId == null || acctId.isEmpty) {
+      return McpResponseBuilder.buildToolErrorResponse(
+          'Missing required argument: accountId');
+    }
+
+    final uri = _config.baseHttpUri.resolve('portfolio/$acctId/positions/0');
+    final res = await _client.get(uri);
+
+    if (res.statusCode == 200) {
+      return McpResponseBuilder.buildToolSuccessResponse(res.body);
+    } else {
+      return _buildErrorFromResponse(res);
+    }
+  }
+
+  Future<Map<String, dynamic>> _executePlaceOrder(
+      Map<String, dynamic> args) async {
+    final acctId = args['accountId']?.toString();
+    final conid = args['conid'];
+    final side = args['side']?.toString();
+    final orderType = args['orderType']?.toString();
+    final quantity = args['quantity'];
+    final price = args['price'];
+
+    if (acctId == null || conid == null || side == null || orderType == null || quantity == null) {
+      return McpResponseBuilder.buildToolErrorResponse(
+          'Invalid or missing order parameters');
+    }
+
+    final orderPayload = {
+      'orders': [
+        {
+          'conid': conid,
+          'orderType': orderType,
+          'price': price,
+          'side': side,
+          'quantity': quantity,
+          'tif': 'DAY',
+        }
+      ]
+    };
+
+    final uri = _config.baseHttpUri.resolve('iserver/account/$acctId/orders');
+    final res = await _client.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(orderPayload),
+    );
+
+    if (res.statusCode == 200) {
+      return McpResponseBuilder.buildToolSuccessResponse(res.body);
+    } else {
+      return _buildErrorFromResponse(res);
+    }
+  }
+
+  Future<Map<String, dynamic>> _executeReplyToChallenge(
+      Map<String, dynamic> args) async {
+    final replyId = args['replyId']?.toString();
+    final confirmed = args['confirmed'] == true;
+
+    if (replyId == null || replyId.isEmpty) {
+      return McpResponseBuilder.buildToolErrorResponse(
+          'Missing required argument: replyId');
+    }
+
+    final handler = ChallengeHandler(_client, _config.baseHttpUri);
+    final success = await handler.submitReply(replyId, confirmed);
+
+    if (success) {
+      return McpResponseBuilder.buildToolSuccessResponse(
+          'Challenge $replyId successfully submitted with confirmed=$confirmed.');
+    } else {
+      return McpResponseBuilder.buildToolErrorResponse(
+          'Failed to submit reply to challenge $replyId');
+    }
+  }
+
+  dynamic _safeJsonDecode(String body) {
+    if (body.trim().isEmpty) return null;
+    try {
+      return jsonDecode(body);
+    } catch (_) {
+      return body;
+    }
+  }
+
+  Map<String, dynamic> _buildErrorFromResponse(dynamic res) {
+    final body = res.body as String;
+    final statusCode = res.statusCode as int;
+    final json = _safeJsonDecode(body);
+    final exc = IbException.fromJson(json, statusCode);
+    return McpResponseBuilder.buildToolErrorResponse(exc.toString());
+  }
+}
