@@ -56,6 +56,8 @@ void main() {
       expect(toolNames, contains('list_working_orders'));
       expect(toolNames, contains('cancel_order'));
       expect(toolNames, contains('modify_order'));
+      expect(toolNames, contains('get_account_summary'));
+      expect(toolNames, contains('get_cash_ledger'));
     });
 
     test('callTool returns error for unknown tool names', () async {
@@ -86,6 +88,12 @@ void main() {
       final res = await registry.callTool('cancel_order', {});
       expect(res['isError'], isTrue);
       expect(res['content'].first['text'], contains('Missing required arguments'));
+    });
+
+    test('callTool get_account_summary returns error if missing accountId', () async {
+      final res = await registry.callTool('get_account_summary', {});
+      expect(res['isError'], isTrue);
+      expect(res['content'].first['text'], contains('Missing required argument: accountId'));
     });
   });
 }
