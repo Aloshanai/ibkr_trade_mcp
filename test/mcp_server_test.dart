@@ -50,6 +50,14 @@ void main() {
       expect(toolNames, contains('get_positions'));
       expect(toolNames, contains('place_order'));
       expect(toolNames, contains('reply_to_challenge'));
+      expect(toolNames, contains('search_contracts'));
+      expect(toolNames, contains('get_market_data'));
+      expect(toolNames, contains('get_historical_prices'));
+      expect(toolNames, contains('list_working_orders'));
+      expect(toolNames, contains('cancel_order'));
+      expect(toolNames, contains('modify_order'));
+      expect(toolNames, contains('get_account_summary'));
+      expect(toolNames, contains('get_cash_ledger'));
     });
 
     test('callTool returns error for unknown tool names', () async {
@@ -60,6 +68,30 @@ void main() {
 
     test('callTool get_positions returns error if missing accountId argument', () async {
       final res = await registry.callTool('get_positions', {});
+      expect(res['isError'], isTrue);
+      expect(res['content'].first['text'], contains('Missing required argument: accountId'));
+    });
+
+    test('callTool search_contracts returns error if missing query argument', () async {
+      final res = await registry.callTool('search_contracts', {});
+      expect(res['isError'], isTrue);
+      expect(res['content'].first['text'], contains('Missing required argument: query'));
+    });
+
+    test('callTool get_historical_prices returns error if missing conid argument', () async {
+      final res = await registry.callTool('get_historical_prices', {});
+      expect(res['isError'], isTrue);
+      expect(res['content'].first['text'], contains('Missing required argument: conid'));
+    });
+
+    test('callTool cancel_order returns error if missing accountId or orderId', () async {
+      final res = await registry.callTool('cancel_order', {});
+      expect(res['isError'], isTrue);
+      expect(res['content'].first['text'], contains('Missing required arguments'));
+    });
+
+    test('callTool get_account_summary returns error if missing accountId', () async {
+      final res = await registry.callTool('get_account_summary', {});
       expect(res['isError'], isTrue);
       expect(res['content'].first['text'], contains('Missing required argument: accountId'));
     });

@@ -106,6 +106,144 @@ class McpToolRegistry {
           'required': ['replyId', 'confirmed'],
         },
       },
+      {
+        'name': 'search_contracts',
+        'description':
+            'Search for IBKR securities (stocks, ETFs, options) by ticker symbol or company name to obtain contract IDs (conid).',
+        'inputSchema': {
+          'type': 'object',
+          'properties': {
+            'query': {
+              'type': 'string',
+              'description': 'Ticker symbol or company name (e.g. AAPL, Tesla)',
+            },
+          },
+          'required': ['query'],
+        },
+      },
+      {
+        'name': 'get_market_data',
+        'description':
+            'Retrieve real-time market data snapshot (last price, bid, ask, volume, daily range) for a specified contract ID (conid).',
+        'inputSchema': {
+          'type': 'object',
+          'properties': {
+            'conid': {
+              'type': 'integer',
+              'description': 'Contract ID of the security (e.g. 265598 for AAPL)',
+            },
+          },
+          'required': ['conid'],
+        },
+      },
+      {
+        'name': 'get_historical_prices',
+        'description':
+            'Retrieve historical price candlestick bars (1min, 5min, 1hour, 1day) for technical analysis on a security.',
+        'inputSchema': {
+          'type': 'object',
+          'properties': {
+            'conid': {
+              'type': 'integer',
+              'description': 'Contract ID of the security (e.g. 265598 for AAPL)',
+            },
+            'period': {
+              'type': 'string',
+              'description': 'Historical time duration (e.g. 1d, 1w, 1m, 1y). Default is 1d.',
+            },
+            'bar': {
+              'type': 'string',
+              'description': 'Candlestick bar size (e.g. 1min, 5min, 1h, 1d). Default is 1h.',
+            },
+          },
+          'required': ['conid'],
+        },
+      },
+      {
+        'name': 'list_working_orders',
+        'description':
+            'Fetch all live open, pending, or working orders across accounts.',
+        'inputSchema': {
+          'type': 'object',
+          'properties': {},
+        },
+      },
+      {
+        'name': 'cancel_order',
+        'description':
+            'Cancel an active pending order by account ID and order ID.',
+        'inputSchema': {
+          'type': 'object',
+          'properties': {
+            'accountId': {
+              'type': 'string',
+              'description': 'Trading account ID',
+            },
+            'orderId': {
+              'type': 'string',
+              'description': 'Order ID to cancel',
+            },
+          },
+          'required': ['accountId', 'orderId'],
+        },
+      },
+      {
+        'name': 'modify_order',
+        'description':
+            'Modify limit price or quantity of an active pending working order.',
+        'inputSchema': {
+          'type': 'object',
+          'properties': {
+            'accountId': {
+              'type': 'string',
+              'description': 'Trading account ID',
+            },
+            'orderId': {
+              'type': 'string',
+              'description': 'Order ID to modify',
+            },
+            'price': {
+              'type': 'number',
+              'description': 'Updated limit price',
+            },
+            'quantity': {
+              'type': 'number',
+              'description': 'Updated order quantity',
+            },
+          },
+          'required': ['accountId', 'orderId'],
+        },
+      },
+      {
+        'name': 'get_account_summary',
+        'description':
+            'Retrieve Net Liquidation Value, buying power, available funds, and total equity summary for a specified trading account.',
+        'inputSchema': {
+          'type': 'object',
+          'properties': {
+            'accountId': {
+              'type': 'string',
+              'description': 'Trading account ID (e.g. DU123456)',
+            },
+          },
+          'required': ['accountId'],
+        },
+      },
+      {
+        'name': 'get_cash_ledger',
+        'description':
+            'Retrieve multi-currency cash balances (USD, EUR, GBP, INR, JPY) for a specified trading account.',
+        'inputSchema': {
+          'type': 'object',
+          'properties': {
+            'accountId': {
+              'type': 'string',
+              'description': 'Trading account ID (e.g. DU123456)',
+            },
+          },
+          'required': ['accountId'],
+        },
+      },
     ];
   }
 
@@ -126,6 +264,22 @@ class McpToolRegistry {
           return await _executePlaceOrder(args);
         case 'reply_to_challenge':
           return await _executeReplyToChallenge(args);
+        case 'search_contracts':
+          return await _executeSearchContracts(args);
+        case 'get_market_data':
+          return await _executeGetMarketData(args);
+        case 'get_historical_prices':
+          return await _executeGetHistoricalPrices(args);
+        case 'list_working_orders':
+          return await _executeListWorkingOrders();
+        case 'cancel_order':
+          return await _executeCancelOrder(args);
+        case 'modify_order':
+          return await _executeModifyOrder(args);
+        case 'get_account_summary':
+          return await _executeGetAccountSummary(args);
+        case 'get_cash_ledger':
+          return await _executeGetCashLedger(args);
         default:
           return McpResponseBuilder.buildToolErrorResponse(
               'Unknown tool name: $name');
@@ -241,6 +395,167 @@ class McpToolRegistry {
     } else {
       return McpResponseBuilder.buildToolErrorResponse(
           'Failed to submit reply to challenge $replyId');
+    }
+  }
+
+  Future<Map<String, dynamic>> _executeSearchContracts(
+      Map<String, dynamic> args) async {
+    final query = args['query']?.toString();
+    if (query == null || query.isEmpty) {
+      return McpResponseBuilder.buildToolErrorResponse(
+          'Missing required argument: query');
+    }
+
+    final uri = _config.baseHttpUri.resolve('iserver/secdef/search');
+    final res = await _client.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'symbol': query, 'name': true}),
+    );
+
+    if (res.statusCode == 200) {
+      return McpResponseBuilder.buildToolSuccessResponse(res.body);
+    } else {
+      return _buildErrorFromResponse(res);
+    }
+  }
+
+  Future<Map<String, dynamic>> _executeGetMarketData(
+      Map<String, dynamic> args) async {
+    final conid = args['conid'];
+    if (conid == null) {
+      return McpResponseBuilder.buildToolErrorResponse(
+          'Missing required argument: conid');
+    }
+
+    final uri = _config.baseHttpUri
+        .resolve('iserver/marketdata/snapshot?conids=$conid&fields=31,84,86,88,85');
+    final res = await _client.get(uri);
+
+    if (res.statusCode == 200) {
+      return McpResponseBuilder.buildToolSuccessResponse(res.body);
+    } else {
+      return _buildErrorFromResponse(res);
+    }
+  }
+
+  Future<Map<String, dynamic>> _executeGetHistoricalPrices(
+      Map<String, dynamic> args) async {
+    final conid = args['conid'];
+    if (conid == null) {
+      return McpResponseBuilder.buildToolErrorResponse(
+          'Missing required argument: conid');
+    }
+
+    final period = args['period']?.toString() ?? '1d';
+    final bar = args['bar']?.toString() ?? '1h';
+
+    final uri = _config.baseHttpUri
+        .resolve('iserver/marketdata/history?conid=$conid&period=$period&bar=$bar');
+    final res = await _client.get(uri);
+
+    if (res.statusCode == 200) {
+      return McpResponseBuilder.buildToolSuccessResponse(res.body);
+    } else {
+      return _buildErrorFromResponse(res);
+    }
+  }
+
+  Future<Map<String, dynamic>> _executeListWorkingOrders() async {
+    final uri = _config.baseHttpUri.resolve('iserver/account/orders');
+    final res = await _client.get(uri);
+
+    if (res.statusCode == 200) {
+      return McpResponseBuilder.buildToolSuccessResponse(res.body);
+    } else {
+      return _buildErrorFromResponse(res);
+    }
+  }
+
+  Future<Map<String, dynamic>> _executeCancelOrder(
+      Map<String, dynamic> args) async {
+    final acctId = args['accountId']?.toString();
+    final orderId = args['orderId']?.toString();
+
+    if (acctId == null || acctId.isEmpty || orderId == null || orderId.isEmpty) {
+      return McpResponseBuilder.buildToolErrorResponse(
+          'Missing required arguments: accountId and orderId');
+    }
+
+    final uri = _config.baseHttpUri.resolve('iserver/account/$acctId/order/$orderId');
+    final res = await _client.delete(uri);
+
+    if (res.statusCode == 200) {
+      return McpResponseBuilder.buildToolSuccessResponse(res.body);
+    } else {
+      return _buildErrorFromResponse(res);
+    }
+  }
+
+  Future<Map<String, dynamic>> _executeModifyOrder(
+      Map<String, dynamic> args) async {
+    final acctId = args['accountId']?.toString();
+    final orderId = args['orderId']?.toString();
+    final price = args['price'];
+    final quantity = args['quantity'];
+
+    if (acctId == null || acctId.isEmpty || orderId == null || orderId.isEmpty) {
+      return McpResponseBuilder.buildToolErrorResponse(
+          'Missing required arguments: accountId and orderId');
+    }
+
+    final modifyPayload = {
+      'price': price,
+      'quantity': quantity,
+    };
+
+    final uri = _config.baseHttpUri.resolve('iserver/account/$acctId/order/$orderId');
+    final res = await _client.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(modifyPayload),
+    );
+
+    if (res.statusCode == 200) {
+      return McpResponseBuilder.buildToolSuccessResponse(res.body);
+    } else {
+      return _buildErrorFromResponse(res);
+    }
+  }
+
+  Future<Map<String, dynamic>> _executeGetAccountSummary(
+      Map<String, dynamic> args) async {
+    final acctId = args['accountId']?.toString();
+    if (acctId == null || acctId.isEmpty) {
+      return McpResponseBuilder.buildToolErrorResponse(
+          'Missing required argument: accountId');
+    }
+
+    final uri = _config.baseHttpUri.resolve('portfolio/$acctId/summary');
+    final res = await _client.get(uri);
+
+    if (res.statusCode == 200) {
+      return McpResponseBuilder.buildToolSuccessResponse(res.body);
+    } else {
+      return _buildErrorFromResponse(res);
+    }
+  }
+
+  Future<Map<String, dynamic>> _executeGetCashLedger(
+      Map<String, dynamic> args) async {
+    final acctId = args['accountId']?.toString();
+    if (acctId == null || acctId.isEmpty) {
+      return McpResponseBuilder.buildToolErrorResponse(
+          'Missing required argument: accountId');
+    }
+
+    final uri = _config.baseHttpUri.resolve('portfolio/$acctId/ledger');
+    final res = await _client.get(uri);
+
+    if (res.statusCode == 200) {
+      return McpResponseBuilder.buildToolSuccessResponse(res.body);
+    } else {
+      return _buildErrorFromResponse(res);
     }
   }
 
