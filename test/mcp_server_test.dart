@@ -53,6 +53,9 @@ void main() {
       expect(toolNames, contains('search_contracts'));
       expect(toolNames, contains('get_market_data'));
       expect(toolNames, contains('get_historical_prices'));
+      expect(toolNames, contains('list_working_orders'));
+      expect(toolNames, contains('cancel_order'));
+      expect(toolNames, contains('modify_order'));
     });
 
     test('callTool returns error for unknown tool names', () async {
@@ -77,6 +80,12 @@ void main() {
       final res = await registry.callTool('get_historical_prices', {});
       expect(res['isError'], isTrue);
       expect(res['content'].first['text'], contains('Missing required argument: conid'));
+    });
+
+    test('callTool cancel_order returns error if missing accountId or orderId', () async {
+      final res = await registry.callTool('cancel_order', {});
+      expect(res['isError'], isTrue);
+      expect(res['content'].first['text'], contains('Missing required arguments'));
     });
   });
 }

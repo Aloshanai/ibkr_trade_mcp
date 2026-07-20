@@ -159,6 +159,61 @@ class McpToolRegistry {
           'required': ['conid'],
         },
       },
+      {
+        'name': 'list_working_orders',
+        'description':
+            'Fetch all live open, pending, or working orders across accounts.',
+        'inputSchema': {
+          'type': 'object',
+          'properties': {},
+        },
+      },
+      {
+        'name': 'cancel_order',
+        'description':
+            'Cancel an active pending order by account ID and order ID.',
+        'inputSchema': {
+          'type': 'object',
+          'properties': {
+            'accountId': {
+              'type': 'string',
+              'description': 'Trading account ID',
+            },
+            'orderId': {
+              'type': 'string',
+              'description': 'Order ID to cancel',
+            },
+          },
+          'required': ['accountId', 'orderId'],
+        },
+      },
+      {
+        'name': 'modify_order',
+        'description':
+            'Modify limit price or quantity of an active pending working order.',
+        'inputSchema': {
+          'type': 'object',
+          'properties': {
+            'accountId': {
+              'type': 'string',
+              'description': 'Trading account ID',
+            },
+            'orderId': {
+              'type': 'string',
+              'description': 'Order ID to modify',
+            },
+            'price': {
+              'type': 'number',
+              'description': 'Updated limit price',
+            },
+            'quantity': {
+              'type': 'number',
+              'description': 'Updated order quantity',
+            },
+          },
+          'required': ['accountId', 'orderId'],
+        },
+      },
     ];
   }
 
@@ -185,6 +240,12 @@ class McpToolRegistry {
           return await _executeGetMarketData(args);
         case 'get_historical_prices':
           return await _executeGetHistoricalPrices(args);
+        case 'list_working_orders':
+          return await _executeListWorkingOrders();
+        case 'cancel_order':
+          return await _executeCancelOrder(args);
+        case 'modify_order':
+          return await _executeModifyOrder(args);
         default:
           return McpResponseBuilder.buildToolErrorResponse(
               'Unknown tool name: $name');
@@ -358,6 +419,68 @@ class McpToolRegistry {
     final uri = _config.baseHttpUri
         .resolve('iserver/marketdata/history?conid=$conid&period=$period&bar=$bar');
     final res = await _client.get(uri);
+
+    if (res.statusCode == 200) {
+      return McpResponseBuilder.buildToolSuccessResponse(res.body);
+    } else {
+      return _buildErrorFromResponse(res);
+    }
+  }
+
+  Future<Map<String, dynamic>> _executeListWorkingOrders() async {
+    final uri = _config.baseHttpUri.resolve('iserver/account/orders');
+    final res = await _client.get(uri);
+
+    if (res.statusCode == 200) {
+      return McpResponseBuilder.buildToolSuccessResponse(res.body);
+    } else {
+      return _buildErrorFromResponse(res);
+    }
+  }
+
+  Future<Map<String, dynamic>> _executeCancelOrder(
+      Map<String, dynamic> args) async {
+    final acctId = args['accountId']?.toString();
+    final orderId = args['orderId']?.toString();
+
+    if (acctId == null || acctId.isEmpty || orderId == null || orderId.isEmpty) {
+      return McpResponseBuilder.buildToolErrorResponse(
+          'Missing required arguments: accountId and orderId');
+    }
+
+    final uri = _config.baseHttpUri.resolve('iserver/account/$acctId/order/$orderId');
+    final res = await _client.delete(uri);
+
+    if (res.statusCode == 200) {
+      return McpResponseBuilder.buildToolSuccessResponse(res.body);
+    } else {
+      return _buildErrorFromResponse(res);
+    }
+  }
+
+  Future<Map<String, dynamic>> _executeModifyOrder(
+      Map<String, dynamic> args) async {
+    final acctId = args['accountId']?.toString();
+    final orderId = args['orderId']?.toString();
+    final price = args['price'];
+    final quantity = args['quantity'];
+
+    if (acctId == null || acctId.isEmpty || orderId == null || orderId.isEmpty) {
+      return McpResponseBuilder.buildToolErrorResponse(
+          'Missing required arguments: accountId and orderId');
+    }
+
+    final modifyPayload = {
+      'price': price,
+      'quantity': quantity,
+    };
+
+    final uri = _config.baseHttpUri.resolve('iserver/account/$acctId/order/$orderId');
+    final res = await _client.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(modifyPayload),
+    );
 
     if (res.statusCode == 200) {
       return McpResponseBuilder.buildToolSuccessResponse(res.body);
