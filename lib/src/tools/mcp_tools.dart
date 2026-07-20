@@ -136,6 +136,29 @@ class McpToolRegistry {
           'required': ['conid'],
         },
       },
+      {
+        'name': 'get_historical_prices',
+        'description':
+            'Retrieve historical price candlestick bars (1min, 5min, 1hour, 1day) for technical analysis on a security.',
+        'inputSchema': {
+          'type': 'object',
+          'properties': {
+            'conid': {
+              'type': 'integer',
+              'description': 'Contract ID of the security (e.g. 265598 for AAPL)',
+            },
+            'period': {
+              'type': 'string',
+              'description': 'Historical time duration (e.g. 1d, 1w, 1m, 1y). Default is 1d.',
+            },
+            'bar': {
+              'type': 'string',
+              'description': 'Candlestick bar size (e.g. 1min, 5min, 1h, 1d). Default is 1h.',
+            },
+          },
+          'required': ['conid'],
+        },
+      },
     ];
   }
 
@@ -160,6 +183,8 @@ class McpToolRegistry {
           return await _executeSearchContracts(args);
         case 'get_market_data':
           return await _executeGetMarketData(args);
+        case 'get_historical_prices':
+          return await _executeGetHistoricalPrices(args);
         default:
           return McpResponseBuilder.buildToolErrorResponse(
               'Unknown tool name: $name');
@@ -310,6 +335,28 @@ class McpToolRegistry {
 
     final uri = _config.baseHttpUri
         .resolve('iserver/marketdata/snapshot?conids=$conid&fields=31,84,86,88,85');
+    final res = await _client.get(uri);
+
+    if (res.statusCode == 200) {
+      return McpResponseBuilder.buildToolSuccessResponse(res.body);
+    } else {
+      return _buildErrorFromResponse(res);
+    }
+  }
+
+  Future<Map<String, dynamic>> _executeGetHistoricalPrices(
+      Map<String, dynamic> args) async {
+    final conid = args['conid'];
+    if (conid == null) {
+      return McpResponseBuilder.buildToolErrorResponse(
+          'Missing required argument: conid');
+    }
+
+    final period = args['period']?.toString() ?? '1d';
+    final bar = args['bar']?.toString() ?? '1h';
+
+    final uri = _config.baseHttpUri
+        .resolve('iserver/marketdata/history?conid=$conid&period=$period&bar=$bar');
     final res = await _client.get(uri);
 
     if (res.statusCode == 200) {
