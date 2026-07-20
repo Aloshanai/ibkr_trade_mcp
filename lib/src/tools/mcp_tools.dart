@@ -214,6 +214,36 @@ class McpToolRegistry {
           'required': ['accountId', 'orderId'],
         },
       },
+      {
+        'name': 'get_account_summary',
+        'description':
+            'Retrieve Net Liquidation Value, buying power, available funds, and total equity summary for a specified trading account.',
+        'inputSchema': {
+          'type': 'object',
+          'properties': {
+            'accountId': {
+              'type': 'string',
+              'description': 'Trading account ID (e.g. DU123456)',
+            },
+          },
+          'required': ['accountId'],
+        },
+      },
+      {
+        'name': 'get_cash_ledger',
+        'description':
+            'Retrieve multi-currency cash balances (USD, EUR, GBP, INR, JPY) for a specified trading account.',
+        'inputSchema': {
+          'type': 'object',
+          'properties': {
+            'accountId': {
+              'type': 'string',
+              'description': 'Trading account ID (e.g. DU123456)',
+            },
+          },
+          'required': ['accountId'],
+        },
+      },
     ];
   }
 
@@ -246,6 +276,10 @@ class McpToolRegistry {
           return await _executeCancelOrder(args);
         case 'modify_order':
           return await _executeModifyOrder(args);
+        case 'get_account_summary':
+          return await _executeGetAccountSummary(args);
+        case 'get_cash_ledger':
+          return await _executeGetCashLedger(args);
         default:
           return McpResponseBuilder.buildToolErrorResponse(
               'Unknown tool name: $name');
@@ -481,6 +515,42 @@ class McpToolRegistry {
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode(modifyPayload),
     );
+
+    if (res.statusCode == 200) {
+      return McpResponseBuilder.buildToolSuccessResponse(res.body);
+    } else {
+      return _buildErrorFromResponse(res);
+    }
+  }
+
+  Future<Map<String, dynamic>> _executeGetAccountSummary(
+      Map<String, dynamic> args) async {
+    final acctId = args['accountId']?.toString();
+    if (acctId == null || acctId.isEmpty) {
+      return McpResponseBuilder.buildToolErrorResponse(
+          'Missing required argument: accountId');
+    }
+
+    final uri = _config.baseHttpUri.resolve('portfolio/$acctId/summary');
+    final res = await _client.get(uri);
+
+    if (res.statusCode == 200) {
+      return McpResponseBuilder.buildToolSuccessResponse(res.body);
+    } else {
+      return _buildErrorFromResponse(res);
+    }
+  }
+
+  Future<Map<String, dynamic>> _executeGetCashLedger(
+      Map<String, dynamic> args) async {
+    final acctId = args['accountId']?.toString();
+    if (acctId == null || acctId.isEmpty) {
+      return McpResponseBuilder.buildToolErrorResponse(
+          'Missing required argument: accountId');
+    }
+
+    final uri = _config.baseHttpUri.resolve('portfolio/$acctId/ledger');
+    final res = await _client.get(uri);
 
     if (res.statusCode == 200) {
       return McpResponseBuilder.buildToolSuccessResponse(res.body);
