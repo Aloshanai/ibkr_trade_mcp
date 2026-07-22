@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:ib_trade_core/ib_trade_core.dart';
 import '../protocol/mcp_protocol.dart';
 import '../utils/logger.dart';
@@ -244,6 +245,24 @@ class McpToolRegistry {
           'required': ['accountId'],
         },
       },
+      {
+        'name': 'ibkr_login',
+        'description':
+            'Automatically open a web browser pointing to the local IBKR Client Portal Gateway authentication page.',
+        'inputSchema': {
+          'type': 'object',
+          'properties': {},
+        },
+      },
+      {
+        'name': 'ibkr_logout',
+        'description':
+            'Terminate the current Interactive Brokers (IBKR) session on the local gateway.',
+        'inputSchema': {
+          'type': 'object',
+          'properties': {},
+        },
+      },
     ];
   }
 
@@ -280,6 +299,10 @@ class McpToolRegistry {
           return await _executeGetAccountSummary(args);
         case 'get_cash_ledger':
           return await _executeGetCashLedger(args);
+        case 'ibkr_login':
+          return await _executeIbkrLogin();
+        case 'ibkr_logout':
+          return await _executeIbkrLogout();
         default:
           return McpResponseBuilder.buildToolErrorResponse(
               'Unknown tool name: $name');
@@ -556,6 +579,43 @@ class McpToolRegistry {
       return McpResponseBuilder.buildToolSuccessResponse(res.body);
     } else {
       return _buildErrorFromResponse(res);
+    }
+  }
+
+  Future<Map<String, dynamic>> _executeIbkrLogin() async {
+    final baseUrl = 'https://${_config.host}:${_config.port}';
+    McpLogger.info('Attempting to open browser for IBKR Gateway login: $baseUrl');
+    await _openBrowser(baseUrl);
+    return McpResponseBuilder.buildToolSuccessResponse(
+        'Successfully opened browser window/tab at $baseUrl. Please complete your login and 2FA authentication in the browser page.');
+  }
+
+  Future<Map<String, dynamic>> _executeIbkrLogout() async {
+    final uri = _config.baseHttpUri.resolve('logout');
+    final res = await _client.post(uri, headers: {'Content-Type': 'application/json'});
+
+    // Clear client cookies
+    _client.cookies.clear();
+
+    if (res.statusCode == 200) {
+      return McpResponseBuilder.buildToolSuccessResponse(
+          'Successfully logged out and terminated the Gateway session.');
+    } else {
+      return _buildErrorFromResponse(res);
+    }
+  }
+
+  Future<void> _openBrowser(String url) async {
+    try {
+      if (Platform.isWindows) {
+        await Process.run('cmd', ['/c', 'start', '', url]);
+      } else if (Platform.isMacOS) {
+        await Process.run('open', [url]);
+      } else if (Platform.isLinux) {
+        await Process.run('xdg-open', [url]);
+      }
+    } catch (e, st) {
+      McpLogger.error('Failed to automatically open browser to $url', e, st);
     }
   }
 
