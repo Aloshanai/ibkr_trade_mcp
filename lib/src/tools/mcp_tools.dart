@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:ib_trade_core/ib_trade_core.dart';
 import '../protocol/mcp_protocol.dart';
 import '../utils/logger.dart';
@@ -44,7 +45,8 @@ class McpToolRegistry {
           'properties': {
             'accountId': {
               'type': 'string',
-              'description': 'The target IBKR trading account ID (e.g. DU123456)',
+              'description':
+                  'The target IBKR trading account ID (e.g. DU123456)',
             },
           },
           'required': ['accountId'],
@@ -63,7 +65,8 @@ class McpToolRegistry {
             },
             'conid': {
               'type': 'integer',
-              'description': 'Contract ID of the security (e.g. 265598 for AAPL)',
+              'description':
+                  'Contract ID of the security (e.g. 265598 for AAPL)',
             },
             'side': {
               'type': 'string',
@@ -100,7 +103,8 @@ class McpToolRegistry {
             },
             'confirmed': {
               'type': 'boolean',
-              'description': 'Set to true to confirm risk disclosure, or false to cancel',
+              'description':
+                  'Set to true to confirm risk disclosure, or false to cancel',
             },
           },
           'required': ['replyId', 'confirmed'],
@@ -130,7 +134,8 @@ class McpToolRegistry {
           'properties': {
             'conid': {
               'type': 'integer',
-              'description': 'Contract ID of the security (e.g. 265598 for AAPL)',
+              'description':
+                  'Contract ID of the security (e.g. 265598 for AAPL)',
             },
           },
           'required': ['conid'],
@@ -145,15 +150,18 @@ class McpToolRegistry {
           'properties': {
             'conid': {
               'type': 'integer',
-              'description': 'Contract ID of the security (e.g. 265598 for AAPL)',
+              'description':
+                  'Contract ID of the security (e.g. 265598 for AAPL)',
             },
             'period': {
               'type': 'string',
-              'description': 'Historical time duration (e.g. 1d, 1w, 1m, 1y). Default is 1d.',
+              'description':
+                  'Historical time duration (e.g. 1d, 1w, 1m, 1y). Default is 1d.',
             },
             'bar': {
               'type': 'string',
-              'description': 'Candlestick bar size (e.g. 1min, 5min, 1h, 1d). Default is 1h.',
+              'description':
+                  'Candlestick bar size (e.g. 1min, 5min, 1h, 1d). Default is 1h.',
             },
           },
           'required': ['conid'],
@@ -190,7 +198,7 @@ class McpToolRegistry {
       {
         'name': 'modify_order',
         'description':
-            'Modify limit price or quantity of an active pending working order.',
+            'Modify limit price, quantity, or parameters of an active pending working order.',
         'inputSchema': {
           'type': 'object',
           'properties': {
@@ -202,6 +210,11 @@ class McpToolRegistry {
               'type': 'string',
               'description': 'Order ID to modify',
             },
+            'conid': {
+              'type': 'integer',
+              'description':
+                  'Contract ID of the security (e.g. 265598 for AAPL)',
+            },
             'price': {
               'type': 'number',
               'description': 'Updated limit price',
@@ -209,6 +222,22 @@ class McpToolRegistry {
             'quantity': {
               'type': 'number',
               'description': 'Updated order quantity',
+            },
+            'side': {
+              'type': 'string',
+              'enum': ['BUY', 'SELL'],
+              'description': 'Order side (BUY or SELL)',
+            },
+            'orderType': {
+              'type': 'string',
+              'enum': ['LMT', 'MKT', 'STP'],
+              'description': 'Type of order',
+            },
+            'tif': {
+              'type': 'string',
+              'enum': ['DAY', 'GTC', 'IOC'],
+              'description':
+                  'Time in force (e.g. DAY, GTC, IOC). Defaults to DAY if omitted.',
             },
           },
           'required': ['accountId', 'orderId'],
@@ -242,6 +271,24 @@ class McpToolRegistry {
             },
           },
           'required': ['accountId'],
+        },
+      },
+      {
+        'name': 'ibkr_login',
+        'description':
+            'Automatically open a web browser pointing to the local IBKR Client Portal Gateway authentication page.',
+        'inputSchema': {
+          'type': 'object',
+          'properties': {},
+        },
+      },
+      {
+        'name': 'ibkr_logout',
+        'description':
+            'Terminate the current Interactive Brokers (IBKR) session on the local gateway.',
+        'inputSchema': {
+          'type': 'object',
+          'properties': {},
         },
       },
     ];
@@ -280,6 +327,10 @@ class McpToolRegistry {
           return await _executeGetAccountSummary(args);
         case 'get_cash_ledger':
           return await _executeGetCashLedger(args);
+        case 'ibkr_login':
+          return await _executeIbkrLogin();
+        case 'ibkr_logout':
+          return await _executeIbkrLogout();
         default:
           return McpResponseBuilder.buildToolErrorResponse(
               'Unknown tool name: $name');
@@ -344,7 +395,11 @@ class McpToolRegistry {
     final quantity = args['quantity'];
     final price = args['price'];
 
-    if (acctId == null || conid == null || side == null || orderType == null || quantity == null) {
+    if (acctId == null ||
+        conid == null ||
+        side == null ||
+        orderType == null ||
+        quantity == null) {
       return McpResponseBuilder.buildToolErrorResponse(
           'Invalid or missing order parameters');
     }
@@ -428,15 +483,35 @@ class McpToolRegistry {
           'Missing required argument: conid');
     }
 
+    final fields = '31,55,70,71,84,86,88,7295,7296';
     final uri = _config.baseHttpUri
-        .resolve('iserver/marketdata/snapshot?conids=$conid&fields=31,84,86,88,85');
-    final res = await _client.get(uri);
+        .resolve('iserver/marketdata/snapshot?conids=$conid&fields=$fields');
+    var res = await _client.get(uri);
 
     if (res.statusCode == 200) {
+      if (!_hasPriceFields(res.body)) {
+        // IBKR requires an initial snapshot request to initialize the market data stream.
+        // Wait 500ms and retry to fetch populated data.
+        await Future.delayed(const Duration(milliseconds: 500));
+        res = await _client.get(uri);
+      }
       return McpResponseBuilder.buildToolSuccessResponse(res.body);
     } else {
       return _buildErrorFromResponse(res);
     }
+  }
+
+  bool _hasPriceFields(String body) {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is List && decoded.isNotEmpty && decoded.first is Map) {
+        final map = decoded.first as Map;
+        return map.containsKey('31') ||
+            map.containsKey('84') ||
+            map.containsKey('86');
+      }
+    } catch (_) {}
+    return false;
   }
 
   Future<Map<String, dynamic>> _executeGetHistoricalPrices(
@@ -450,8 +525,8 @@ class McpToolRegistry {
     final period = args['period']?.toString() ?? '1d';
     final bar = args['bar']?.toString() ?? '1h';
 
-    final uri = _config.baseHttpUri
-        .resolve('iserver/marketdata/history?conid=$conid&period=$period&bar=$bar');
+    final uri = _config.baseHttpUri.resolve(
+        'iserver/marketdata/history?conid=$conid&period=$period&bar=$bar');
     final res = await _client.get(uri);
 
     if (res.statusCode == 200) {
@@ -477,12 +552,16 @@ class McpToolRegistry {
     final acctId = args['accountId']?.toString();
     final orderId = args['orderId']?.toString();
 
-    if (acctId == null || acctId.isEmpty || orderId == null || orderId.isEmpty) {
+    if (acctId == null ||
+        acctId.isEmpty ||
+        orderId == null ||
+        orderId.isEmpty) {
       return McpResponseBuilder.buildToolErrorResponse(
           'Missing required arguments: accountId and orderId');
     }
 
-    final uri = _config.baseHttpUri.resolve('iserver/account/$acctId/order/$orderId');
+    final uri =
+        _config.baseHttpUri.resolve('iserver/account/$acctId/order/$orderId');
     final res = await _client.delete(uri);
 
     if (res.statusCode == 200) {
@@ -496,20 +575,37 @@ class McpToolRegistry {
       Map<String, dynamic> args) async {
     final acctId = args['accountId']?.toString();
     final orderId = args['orderId']?.toString();
+    var conid = args['conid'];
     final price = args['price'];
     final quantity = args['quantity'];
+    final side = args['side']?.toString();
+    final orderType = args['orderType']?.toString();
+    final tif = args['tif']?.toString() ?? 'DAY';
 
-    if (acctId == null || acctId.isEmpty || orderId == null || orderId.isEmpty) {
+    if (acctId == null ||
+        acctId.isEmpty ||
+        orderId == null ||
+        orderId.isEmpty) {
       return McpResponseBuilder.buildToolErrorResponse(
           'Missing required arguments: accountId and orderId');
     }
 
-    final modifyPayload = {
-      'price': price,
-      'quantity': quantity,
+    // Auto-lookup conid from working orders if missing from caller args
+    if (conid == null) {
+      conid = await _autoLookupConidForOrder(orderId, acctId);
+    }
+
+    final modifyPayload = <String, dynamic>{
+      if (conid != null) 'conid': conid,
+      if (price != null) 'price': price,
+      if (quantity != null) 'quantity': quantity,
+      if (side != null) 'side': side,
+      if (orderType != null) 'orderType': orderType,
+      'tif': tif,
     };
 
-    final uri = _config.baseHttpUri.resolve('iserver/account/$acctId/order/$orderId');
+    final uri =
+        _config.baseHttpUri.resolve('iserver/account/$acctId/order/$orderId');
     final res = await _client.post(
       uri,
       headers: {'Content-Type': 'application/json'},
@@ -521,6 +617,46 @@ class McpToolRegistry {
     } else {
       return _buildErrorFromResponse(res);
     }
+  }
+
+  Future<dynamic> _autoLookupConidForOrder(String orderId, [String? acctId]) async {
+    try {
+      final uris = [
+        _config.baseHttpUri.resolve('iserver/account/orders'),
+        if (acctId != null && acctId.isNotEmpty)
+          _config.baseHttpUri.resolve('iserver/account/$acctId/orders'),
+      ];
+
+      for (final uri in uris) {
+        final res = await _client.get(uri);
+        if (res.statusCode == 200) {
+          final decoded = _safeJsonDecode(res.body);
+          List ordersList = [];
+          if (decoded is List) {
+            ordersList = decoded;
+          } else if (decoded is Map && decoded['orders'] is List) {
+            ordersList = decoded['orders'] as List;
+          }
+
+          for (final item in ordersList) {
+            if (item is Map) {
+              final id = item['orderId']?.toString() ??
+                  item['order_id']?.toString() ??
+                  item['id']?.toString();
+              if (id == orderId) {
+                final foundConid = item['conid'] ?? item['conId'] ?? item['conidex'];
+                if (foundConid != null) {
+                  return int.tryParse(foundConid.toString()) ?? foundConid;
+                }
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      McpLogger.error('Failed auto-lookup of conid for order $orderId', e);
+    }
+    return null;
   }
 
   Future<Map<String, dynamic>> _executeGetAccountSummary(
@@ -556,6 +692,45 @@ class McpToolRegistry {
       return McpResponseBuilder.buildToolSuccessResponse(res.body);
     } else {
       return _buildErrorFromResponse(res);
+    }
+  }
+
+  Future<Map<String, dynamic>> _executeIbkrLogin() async {
+    final baseUrl = 'https://${_config.host}:${_config.port}';
+    McpLogger.info(
+        'Attempting to open browser for IBKR Gateway login: $baseUrl');
+    await _openBrowser(baseUrl);
+    return McpResponseBuilder.buildToolSuccessResponse(
+        'Successfully opened browser window/tab at $baseUrl. Please complete your login and 2FA authentication in the browser page.');
+  }
+
+  Future<Map<String, dynamic>> _executeIbkrLogout() async {
+    final uri = _config.baseHttpUri.resolve('logout');
+    final res =
+        await _client.post(uri, headers: {'Content-Type': 'application/json'});
+
+    // Clear client cookies
+    _client.clearCookies();
+
+    if (res.statusCode == 200) {
+      return McpResponseBuilder.buildToolSuccessResponse(
+          'Successfully logged out and terminated the Gateway session.');
+    } else {
+      return _buildErrorFromResponse(res);
+    }
+  }
+
+  Future<void> _openBrowser(String url) async {
+    try {
+      if (Platform.isWindows) {
+        await Process.run('cmd', ['/c', 'start', '', url]);
+      } else if (Platform.isMacOS) {
+        await Process.run('open', [url]);
+      } else if (Platform.isLinux) {
+        await Process.run('xdg-open', [url]);
+      }
+    } catch (e, st) {
+      McpLogger.error('Failed to automatically open browser to $url', e, st);
     }
   }
 
