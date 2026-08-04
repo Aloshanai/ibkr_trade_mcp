@@ -49,7 +49,6 @@ void main() {
       expect(toolNames, contains('list_accounts'));
       expect(toolNames, contains('get_positions'));
       expect(toolNames, contains('place_order'));
-      expect(toolNames, contains('place_bracket_order'));
       expect(toolNames, contains('reply_to_challenge'));
       expect(toolNames, contains('search_contracts'));
       expect(toolNames, contains('get_market_data'));
@@ -59,6 +58,7 @@ void main() {
       expect(toolNames, contains('modify_order'));
       expect(toolNames, contains('get_account_summary'));
       expect(toolNames, contains('get_cash_ledger'));
+      expect(toolNames, contains('get_portfolio_pnl'));
       expect(toolNames, contains('ibkr_login'));
       expect(toolNames, contains('ibkr_logout'));
     });
@@ -69,60 +69,62 @@ void main() {
       expect(res['content'].first['text'], contains('Unknown tool name'));
     });
 
-    test('callTool place_bracket_order validation for missing required arguments', () async {
-      final res = await registry.callTool('place_bracket_order', {});
+    test('callTool get_portfolio_pnl returns error if missing accountId',
+        () async {
+      final res = await registry.callTool('get_portfolio_pnl', {});
       expect(res['isError'], isTrue);
-      expect(res['content'].first['text'], contains('Missing required arguments for bracket order'));
+      expect(res['content'].first['text'],
+          contains('Missing required argument: accountId'));
     });
 
-    test('callTool place_bracket_order validation for LMT order missing entryPrice', () async {
-      final res = await registry.callTool('place_bracket_order', {
-        'accountId': 'DU123456',
-        'conid': 265598,
-        'side': 'BUY',
-        'quantity': 10,
-        'orderType': 'LMT',
-        'takeProfitPrice': 160.0,
-        'stopLossPrice': 140.0,
-      });
-      expect(res['isError'], isTrue);
-      expect(res['content'].first['text'], contains('entryPrice is required when orderType is LMT'));
-    });
-
-    test('callTool get_positions returns error if missing accountId argument', () async {
+    test('callTool get_positions returns error if missing accountId argument',
+        () async {
       final res = await registry.callTool('get_positions', {});
       expect(res['isError'], isTrue);
-      expect(res['content'].first['text'], contains('Missing required argument: accountId'));
+      expect(res['content'].first['text'],
+          contains('Missing required argument: accountId'));
     });
 
-    test('callTool search_contracts returns error if missing query argument', () async {
+    test('callTool search_contracts returns error if missing query argument',
+        () async {
       final res = await registry.callTool('search_contracts', {});
       expect(res['isError'], isTrue);
-      expect(res['content'].first['text'], contains('Missing required argument: query'));
+      expect(res['content'].first['text'],
+          contains('Missing required argument: query'));
     });
 
-    test('callTool get_historical_prices returns error if missing conid argument', () async {
+    test(
+        'callTool get_historical_prices returns error if missing conid argument',
+        () async {
       final res = await registry.callTool('get_historical_prices', {});
       expect(res['isError'], isTrue);
-      expect(res['content'].first['text'], contains('Missing required argument: conid'));
+      expect(res['content'].first['text'],
+          contains('Missing required argument: conid'));
     });
 
-    test('callTool cancel_order returns error if missing accountId or orderId', () async {
+    test('callTool cancel_order returns error if missing accountId or orderId',
+        () async {
       final res = await registry.callTool('cancel_order', {});
       expect(res['isError'], isTrue);
-      expect(res['content'].first['text'], contains('Missing required arguments'));
+      expect(
+          res['content'].first['text'], contains('Missing required arguments'));
     });
 
-    test('callTool get_account_summary returns error if missing accountId', () async {
+    test('callTool get_account_summary returns error if missing accountId',
+        () async {
       final res = await registry.callTool('get_account_summary', {});
       expect(res['isError'], isTrue);
-      expect(res['content'].first['text'], contains('Missing required argument: accountId'));
+      expect(res['content'].first['text'],
+          contains('Missing required argument: accountId'));
     });
 
-    test('callTool ibkr_login returns success message and triggers browser path', () async {
+    test(
+        'callTool ibkr_login returns success message and triggers browser path',
+        () async {
       final res = await registry.callTool('ibkr_login', {});
       expect(res['isError'], isFalse);
-      expect(res['content'].first['text'], contains('Successfully opened browser'));
+      expect(res['content'].first['text'],
+          contains('Successfully opened browser'));
     });
   });
 }
