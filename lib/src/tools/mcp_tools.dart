@@ -91,71 +91,6 @@ class McpToolRegistry {
         },
       },
       {
-        'name': 'place_bracket_order',
-        'description':
-            'Submit a parent entry order with attached Take-Profit (Limit) and Stop-Loss (Stop) child exit orders for automated risk management.',
-        'inputSchema': {
-          'type': 'object',
-          'properties': {
-            'accountId': {
-              'type': 'string',
-              'description': 'Trading account ID (e.g. DU123456)',
-            },
-            'conid': {
-              'type': 'integer',
-              'description':
-                  'Contract ID of the security (e.g. 265598 for AAPL)',
-            },
-            'side': {
-              'type': 'string',
-              'enum': ['BUY', 'SELL'],
-              'description': 'Parent entry order side (BUY or SELL)',
-            },
-            'quantity': {
-              'type': 'number',
-              'description': 'Number of shares or contracts',
-            },
-            'orderType': {
-              'type': 'string',
-              'enum': ['LMT', 'MKT'],
-              'description': 'Parent entry order type (LMT or MKT)',
-            },
-            'entryPrice': {
-              'type': 'number',
-              'description':
-                  'Limit price for parent entry order (required if orderType is LMT)',
-            },
-            'takeProfitPrice': {
-              'type': 'number',
-              'description': 'Take-profit limit exit price',
-            },
-            'stopLossPrice': {
-              'type': 'number',
-              'description': 'Stop-loss stop exit price',
-            },
-            'tif': {
-              'type': 'string',
-              'enum': ['DAY', 'GTC', 'IOC'],
-              'description': 'Time in force (e.g. DAY, GTC). Defaults to DAY.',
-            },
-            'outsideRth': {
-              'type': 'boolean',
-              'description':
-                  'Allow execution outside regular trading hours (RTH)',
-            },
-          },
-          'required': [
-            'accountId',
-            'conid',
-            'side',
-            'quantity',
-            'orderType',
-            'takeProfitPrice',
-            'stopLossPrice'
-          ],
-        },
-      },
-      {
         'name': 'reply_to_challenge',
         'description':
             'Submit a confirmation reply (accept or decline) to an execution warning challenge prompt returned by IBKR.',
@@ -318,6 +253,21 @@ class McpToolRegistry {
         },
       },
       {
+        'name': 'get_portfolio_pnl',
+        'description':
+            'Retrieve aggregated daily PnL, unrealized PnL, realized PnL, Net Liquidation Value, and position performance breakdown for an account.',
+        'inputSchema': {
+          'type': 'object',
+          'properties': {
+            'accountId': {
+              'type': 'string',
+              'description': 'Target IBKR account ID (e.g. DU123456)',
+            },
+          },
+          'required': ['accountId'],
+        },
+      },
+      {
         'name': 'ibkr_login',
         'description':
             'Automatically open a web browser pointing to the local IBKR Client Portal Gateway authentication page.',
@@ -353,8 +303,6 @@ class McpToolRegistry {
           return await _executeGetPositions(args);
         case 'place_order':
           return await _executePlaceOrder(args);
-        case 'place_bracket_order':
-          return await _executePlaceBracketOrder(args);
         case 'reply_to_challenge':
           return await _executeReplyToChallenge(args);
         case 'search_contracts':
@@ -373,6 +321,8 @@ class McpToolRegistry {
           return await _executeGetAccountSummary(args);
         case 'get_cash_ledger':
           return await _executeGetCashLedger(args);
+        case 'get_portfolio_pnl':
+          return await _executeGetPortfolioPnl(args);
         case 'ibkr_login':
           return await _executeIbkrLogin();
         case 'ibkr_logout':
@@ -461,101 +411,6 @@ class McpToolRegistry {
           'tif': 'DAY',
         }
       ]
-    };
-
-    final uri = _config.baseHttpUri.resolve('iserver/account/$acctId/orders');
-    final res = await _client.post(
-      uri,
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(orderPayload),
-    );
-
-    if (res.statusCode == 200) {
-      return McpResponseBuilder.buildToolSuccessResponse(res.body);
-    } else {
-      return _buildErrorFromResponse(res);
-    }
-  }
-
-  Future<Map<String, dynamic>> _executePlaceBracketOrder(
-      Map<String, dynamic> args) async {
-    final acctId = args['accountId']?.toString();
-    final conid = args['conid'];
-    final side = args['side']?.toString()?.toUpperCase();
-    final quantity = args['quantity'];
-    final orderType = args['orderType']?.toString()?.toUpperCase();
-    final entryPrice = args['entryPrice'];
-    final takeProfitPrice = args['takeProfitPrice'];
-    final stopLossPrice = args['stopLossPrice'];
-    final tif = args['tif']?.toString() ?? 'DAY';
-    final outsideRth = args['outsideRth'] == true;
-
-    if (acctId == null ||
-        acctId.isEmpty ||
-        conid == null ||
-        side == null ||
-        quantity == null ||
-        orderType == null ||
-        takeProfitPrice == null ||
-        stopLossPrice == null) {
-      return McpResponseBuilder.buildToolErrorResponse(
-          'Missing required arguments for bracket order. Required: accountId, conid, side, quantity, orderType, takeProfitPrice, stopLossPrice');
-    }
-
-    if (orderType == 'LMT' && entryPrice == null) {
-      return McpResponseBuilder.buildToolErrorResponse(
-          'entryPrice is required when orderType is LMT');
-    }
-
-    final exitSide = side == 'BUY' ? 'SELL' : 'BUY';
-    final timestamp = DateTime.now().millisecondsSinceEpoch;
-    final parentCOId = 'p_$timestamp';
-    final tpCOId = 'tp_$timestamp';
-    final slCOId = 'sl_$timestamp';
-
-    final parentOrder = <String, dynamic>{
-      'acctId': acctId,
-      'conid': conid,
-      'orderType': orderType,
-      if (entryPrice != null) 'price': entryPrice,
-      'side': side,
-      'quantity': quantity,
-      'tif': tif,
-      if (outsideRth) 'outsideRTH': true,
-      'cOID': parentCOId,
-    };
-
-    final takeProfitOrder = <String, dynamic>{
-      'acctId': acctId,
-      'conid': conid,
-      'cOID': tpCOId,
-      'parentId': parentCOId,
-      'isChildOrder': true,
-      'orderType': 'LMT',
-      'price': takeProfitPrice,
-      'side': exitSide,
-      'quantity': quantity,
-      'tif': 'GTC',
-      if (outsideRth) 'outsideRTH': true,
-    };
-
-    final stopLossOrder = <String, dynamic>{
-      'acctId': acctId,
-      'conid': conid,
-      'cOID': slCOId,
-      'parentId': parentCOId,
-      'isChildOrder': true,
-      'orderType': 'STP',
-      'price': stopLossPrice,
-      'auxPrice': stopLossPrice,
-      'side': exitSide,
-      'quantity': quantity,
-      'tif': 'GTC',
-      if (outsideRth) 'outsideRTH': true,
-    };
-
-    final orderPayload = {
-      'orders': [parentOrder, takeProfitOrder, stopLossOrder]
     };
 
     final uri = _config.baseHttpUri.resolve('iserver/account/$acctId/orders');
@@ -761,6 +616,114 @@ class McpToolRegistry {
     } else {
       return _buildErrorFromResponse(res);
     }
+  }
+
+  Future<Map<String, dynamic>> _executeGetPortfolioPnl(
+      Map<String, dynamic> args) async {
+    final acctId = args['accountId']?.toString();
+    if (acctId == null || acctId.isEmpty) {
+      return McpResponseBuilder.buildToolErrorResponse(
+          'Missing required argument: accountId');
+    }
+
+    // 1. Fetch Account Summary
+    final summaryUri = _config.baseHttpUri.resolve('portfolio/$acctId/summary');
+    final summaryRes = await _client.get(summaryUri);
+
+    double netLiquidation = 0.0;
+    double unrealizedPnL = 0.0;
+    double realizedPnL = 0.0;
+    double buyingPower = 0.0;
+
+    if (summaryRes.statusCode == 200) {
+      final summaryDecoded = _safeJsonDecode(summaryRes.body);
+      if (summaryDecoded is Map) {
+        netLiquidation = _parseSummaryValue(summaryDecoded['netliquidation']);
+        unrealizedPnL = _parseSummaryValue(summaryDecoded['unrealizedpnl']);
+        realizedPnL = _parseSummaryValue(summaryDecoded['realizedpnl']);
+        buyingPower = _parseSummaryValue(summaryDecoded['buyingpower']);
+      }
+    }
+
+    // 2. Fetch Partitioned Daily PnL
+    final pnlUri =
+        _config.baseHttpUri.resolve('iserver/account/pnl/partitioned');
+    final pnlRes = await _client.get(pnlUri);
+
+    double dailyPnL = 0.0;
+    if (pnlRes.statusCode == 200) {
+      final pnlDecoded = _safeJsonDecode(pnlRes.body);
+      if (pnlDecoded is Map) {
+        for (final entry in pnlDecoded.values) {
+          if (entry is Map && entry['dnl'] != null) {
+            dailyPnL += _parseDouble(entry['dnl']);
+          }
+        }
+      }
+    }
+
+    // 3. Fetch Position Performance Breakdown
+    final positionsUri =
+        _config.baseHttpUri.resolve('portfolio/$acctId/positions/0');
+    final positionsRes = await _client.get(positionsUri);
+
+    final positionsList = <Map<String, dynamic>>[];
+    if (positionsRes.statusCode == 200) {
+      final posDecoded = _safeJsonDecode(positionsRes.body);
+      if (posDecoded is List) {
+        for (final pos in posDecoded) {
+          if (pos is Map) {
+            final symbol = pos['ticker'] ??
+                pos['contractDesc'] ??
+                pos['symbol'] ??
+                pos['conid']?.toString() ??
+                'UNKNOWN';
+            final qty = _parseDouble(pos['position']);
+            final avgCost = _parseDouble(pos['avgCost'] ?? pos['avgPrice']);
+            final marketPrice = _parseDouble(pos['mktPrice'] ?? pos['price']);
+            final marketValue = _parseDouble(pos['mktValue']);
+            final posUnrealized = _parseDouble(pos['unrealizedPnl']);
+            final posRealized = _parseDouble(pos['realizedPnl']);
+
+            positionsList.add({
+              'symbol': symbol,
+              'conid': pos['conid'],
+              'qty': qty,
+              'avgCost': avgCost,
+              'marketPrice': marketPrice,
+              'marketValue': marketValue,
+              'unrealizedPnL': posUnrealized,
+              'realizedPnL': posRealized,
+            });
+          }
+        }
+      }
+    }
+
+    final pnlSummary = {
+      'account': acctId,
+      'dailyPnL': dailyPnL,
+      'unrealizedPnL': unrealizedPnL,
+      'realizedPnL': realizedPnL,
+      'netLiquidation': netLiquidation,
+      'buyingPower': buyingPower,
+      'positions': positionsList,
+    };
+
+    return McpResponseBuilder.buildToolSuccessResponse(jsonEncode(pnlSummary));
+  }
+
+  double _parseSummaryValue(dynamic item) {
+    if (item is Map && item['amount'] != null) {
+      return _parseDouble(item['amount']);
+    }
+    return _parseDouble(item);
+  }
+
+  double _parseDouble(dynamic val) {
+    if (val == null) return 0.0;
+    if (val is num) return val.toDouble();
+    return double.tryParse(val.toString()) ?? 0.0;
   }
 
   Future<Map<String, dynamic>> _executeIbkrLogin() async {
