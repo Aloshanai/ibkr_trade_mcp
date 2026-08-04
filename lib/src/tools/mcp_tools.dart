@@ -700,11 +700,21 @@ class McpToolRegistry {
       }
     }
 
+    // Auto-reconcile account-level unrealized & realized PnL from positions if top-level summary is 0
+    if (unrealizedPnL == 0.0 && positionsList.isNotEmpty) {
+      unrealizedPnL = positionsList.fold(
+          0.0, (sum, pos) => sum + (pos['unrealizedPnL'] as double? ?? 0.0));
+    }
+    if (realizedPnL == 0.0 && positionsList.isNotEmpty) {
+      realizedPnL = positionsList.fold(
+          0.0, (sum, pos) => sum + (pos['realizedPnL'] as double? ?? 0.0));
+    }
+
     final pnlSummary = {
       'account': acctId,
       'dailyPnL': dailyPnL,
-      'unrealizedPnL': unrealizedPnL,
-      'realizedPnL': realizedPnL,
+      'unrealizedPnL': double.parse(unrealizedPnL.toStringAsFixed(2)),
+      'realizedPnL': double.parse(realizedPnL.toStringAsFixed(2)),
       'netLiquidation': netLiquidation,
       'buyingPower': buyingPower,
       'positions': positionsList,
