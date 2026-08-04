@@ -13,7 +13,5 @@ COPY --chown=65532:65532 --from=build /app/bin/ibkr_trade_mcp /app/bin/ibkr_trad
 
 USER 65532:65532
 
-USER 65532:65532
-
 ENTRYPOINT ["/app/bin/ibkr_trade_mcp"]
 
