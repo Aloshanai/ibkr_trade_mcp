@@ -264,6 +264,11 @@ class McpToolRegistry {
               'description':
                   'Contract ID of the underlying security (e.g. 265598 for AAPL)',
             },
+            'symbol': {
+              'type': 'string',
+              'description':
+                  'Ticker symbol of underlying security (e.g. AAPL). Highly recommended to pre-warm IBKR option chain cache.',
+            },
             'secType': {
               'type': 'string',
               'description': 'Security type (OPT or FOP). Defaults to OPT.',
@@ -271,7 +276,7 @@ class McpToolRegistry {
             'month': {
               'type': 'string',
               'description':
-                  'Expiration month filter (e.g. JAN26 or 202601). Optional.',
+                  'Expiration month filter (e.g. AUG26, SEP26). Optional.',
             },
           },
           'required': ['conid'],
@@ -289,6 +294,11 @@ class McpToolRegistry {
               'description':
                   'Contract ID of underlying security (e.g. 265598 for AAPL)',
             },
+            'symbol': {
+              'type': 'string',
+              'description':
+                  'Ticker symbol of underlying security (e.g. AAPL).',
+            },
             'right': {
               'type': 'string',
               'enum': ['C', 'P', 'CALL', 'PUT'],
@@ -301,7 +311,7 @@ class McpToolRegistry {
             'expiration': {
               'type': 'string',
               'description':
-                  'Option expiration month or date (e.g. JAN26 or 20260116)',
+                  'Option expiration month or date (e.g. AUG26 or 20260821)',
             },
             'secType': {
               'type': 'string',
@@ -667,6 +677,7 @@ class McpToolRegistry {
   Future<Map<String, dynamic>> _executeGetOptionChains(
       Map<String, dynamic> args) async {
     final conid = args['conid'];
+    final symbol = args['symbol']?.toString();
     if (conid == null) {
       return McpResponseBuilder.buildToolErrorResponse(
           'Missing required argument: conid');
@@ -675,16 +686,18 @@ class McpToolRegistry {
     final secType = args['secType']?.toString() ?? 'OPT';
     final month = args['month']?.toString();
 
-    // IBKR Prerequisite: Warm up secdef cache for the contract before querying strikes
-    try {
-      final searchUri = _config.baseHttpUri.resolve('iserver/secdef/search');
-      await _client.post(
-        searchUri,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'symbol': conid.toString(), 'name': false}),
-      );
-    } catch (_) {
-      // Ignore search pre-warm errors and proceed to strikes
+    // IBKR Prerequisite: Warm up secdef cache for the contract symbol before querying strikes
+    if (symbol != null && symbol.isNotEmpty) {
+      try {
+        final searchUri = _config.baseHttpUri.resolve('iserver/secdef/search');
+        await _client.post(
+          searchUri,
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'symbol': symbol}),
+        );
+      } catch (_) {
+        // Ignore search pre-warm errors and proceed to strikes
+      }
     }
 
     final queryParams = <String, String>{
@@ -708,6 +721,7 @@ class McpToolRegistry {
   Future<Map<String, dynamic>> _executeResolveOptionContract(
       Map<String, dynamic> args) async {
     final underlyingConid = args['underlyingConid'];
+    final symbol = args['symbol']?.toString();
     final rightRaw = args['right']?.toString()?.toUpperCase();
     final strike = args['strike'];
     final expiration = args['expiration']?.toString();
@@ -720,16 +734,18 @@ class McpToolRegistry {
 
     final right = (rightRaw == 'CALL' || rightRaw == 'C') ? 'C' : 'P';
 
-    // IBKR Prerequisite: Warm up secdef cache for the underlying contract
-    try {
-      final searchUri = _config.baseHttpUri.resolve('iserver/secdef/search');
-      await _client.post(
-        searchUri,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'symbol': underlyingConid.toString(), 'name': false}),
-      );
-    } catch (_) {
-      // Ignore pre-warm errors
+    // IBKR Prerequisite: Warm up secdef cache for the underlying symbol
+    if (symbol != null && symbol.isNotEmpty) {
+      try {
+        final searchUri = _config.baseHttpUri.resolve('iserver/secdef/search');
+        await _client.post(
+          searchUri,
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'symbol': symbol}),
+        );
+      } catch (_) {
+        // Ignore pre-warm errors
+      }
     }
 
     final queryParams = <String, String>{
