@@ -58,6 +58,8 @@ void main() {
       expect(toolNames, contains('modify_order'));
       expect(toolNames, contains('get_account_summary'));
       expect(toolNames, contains('get_cash_ledger'));
+      expect(toolNames, contains('get_option_chains'));
+      expect(toolNames, contains('resolve_option_contract'));
       expect(toolNames, contains('ibkr_login'));
       expect(toolNames, contains('ibkr_logout'));
     });
@@ -68,19 +70,21 @@ void main() {
       expect(res['content'].first['text'], contains('Unknown tool name'));
     });
 
-    test(
-        'callTool place_order validation for TRAIL order missing auxPrice/trailingPercent',
+    test('callTool get_option_chains returns error if missing conid argument',
         () async {
-      final res = await registry.callTool('place_order', {
-        'accountId': 'DU123456',
-        'conid': 265598,
-        'side': 'SELL',
-        'quantity': 10,
-        'orderType': 'TRAIL',
-      });
+      final res = await registry.callTool('get_option_chains', {});
       expect(res['isError'], isTrue);
       expect(res['content'].first['text'],
-          contains('Either auxPrice or trailingPercent is required'));
+          contains('Missing required argument: conid'));
+    });
+
+    test(
+        'callTool resolve_option_contract returns error if missing required arguments',
+        () async {
+      final res = await registry.callTool('resolve_option_contract', {});
+      expect(res['isError'], isTrue);
+      expect(
+          res['content'].first['text'], contains('Missing required arguments'));
     });
 
     test('callTool get_positions returns error if missing accountId argument',

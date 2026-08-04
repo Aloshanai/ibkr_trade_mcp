@@ -55,13 +55,13 @@ class McpToolRegistry {
       {
         'name': 'place_order',
         'description':
-            'Submit a trade order (buy/sell equities, options, or trailing stop orders) to the IBKR Gateway.',
+            'Submit a trade order (buy/sell equities or options) to the IBKR Gateway.',
         'inputSchema': {
           'type': 'object',
           'properties': {
             'accountId': {
               'type': 'string',
-              'description': 'Trading account ID (e.g. DU123456)',
+              'description': 'Trading account ID',
             },
             'conid': {
               'type': 'integer',
@@ -75,38 +75,16 @@ class McpToolRegistry {
             },
             'orderType': {
               'type': 'string',
-              'enum': ['LMT', 'MKT', 'STP', 'TRAIL', 'TRAIL LIMIT'],
-              'description':
-                  'Type of order (LMT, MKT, STP, TRAIL, or TRAIL LIMIT)',
+              'enum': ['LMT', 'MKT', 'STP'],
+              'description': 'Type of order',
             },
             'price': {
               'type': 'number',
-              'description':
-                  'Limit price (required for LMT, STP, and TRAIL LIMIT orders)',
+              'description': 'Limit price (required for LMT and STP orders)',
             },
             'quantity': {
               'type': 'number',
               'description': 'Number of shares/contracts',
-            },
-            'auxPrice': {
-              'type': 'number',
-              'description':
-                  'Trailing stop dollar amount (e.g. 5.00 for \$5 trailing stop gap)',
-            },
-            'trailingPercent': {
-              'type': 'number',
-              'description':
-                  'Trailing stop percentage (e.g. 2.5 for 2.5% trailing stop gap)',
-            },
-            'tif': {
-              'type': 'string',
-              'enum': ['DAY', 'GTC', 'IOC'],
-              'description': 'Time in force (defaults to DAY)',
-            },
-            'outsideRth': {
-              'type': 'boolean',
-              'description':
-                  'Allow execution outside regular trading hours (RTH)',
             },
           },
           'required': ['accountId', 'conid', 'side', 'orderType', 'quantity'],
@@ -275,6 +253,65 @@ class McpToolRegistry {
         },
       },
       {
+        'name': 'get_option_chains',
+        'description':
+            'Fetch available option expiration dates, strike prices, and available option parameters for an underlying security contract ID (conid).',
+        'inputSchema': {
+          'type': 'object',
+          'properties': {
+            'conid': {
+              'type': 'integer',
+              'description':
+                  'Contract ID of the underlying security (e.g. 265598 for AAPL)',
+            },
+            'secType': {
+              'type': 'string',
+              'description': 'Security type (OPT or FOP). Defaults to OPT.',
+            },
+            'month': {
+              'type': 'string',
+              'description':
+                  'Expiration month filter (e.g. JAN26 or 202601). Optional.',
+            },
+          },
+          'required': ['conid'],
+        },
+      },
+      {
+        'name': 'resolve_option_contract',
+        'description':
+            'Resolve the exact contract ID (conid) for a specific option contract given underlying conid, expiration date, strike price, and right (CALL/PUT).',
+        'inputSchema': {
+          'type': 'object',
+          'properties': {
+            'underlyingConid': {
+              'type': 'integer',
+              'description':
+                  'Contract ID of underlying security (e.g. 265598 for AAPL)',
+            },
+            'right': {
+              'type': 'string',
+              'enum': ['C', 'P', 'CALL', 'PUT'],
+              'description': 'Option right: C / CALL or P / PUT',
+            },
+            'strike': {
+              'type': 'number',
+              'description': 'Option strike price (e.g. 200.0)',
+            },
+            'expiration': {
+              'type': 'string',
+              'description':
+                  'Option expiration month or date (e.g. JAN26 or 20260116)',
+            },
+            'secType': {
+              'type': 'string',
+              'description': 'Security type (OPT or FOP). Defaults to OPT.',
+            },
+          },
+          'required': ['underlyingConid', 'right', 'strike'],
+        },
+      },
+      {
         'name': 'ibkr_login',
         'description':
             'Automatically open a web browser pointing to the local IBKR Client Portal Gateway authentication page.',
@@ -328,6 +365,10 @@ class McpToolRegistry {
           return await _executeGetAccountSummary(args);
         case 'get_cash_ledger':
           return await _executeGetCashLedger(args);
+        case 'get_option_chains':
+          return await _executeGetOptionChains(args);
+        case 'resolve_option_contract':
+          return await _executeResolveOptionContract(args);
         case 'ibkr_login':
           return await _executeIbkrLogin();
         case 'ibkr_logout':
@@ -391,63 +432,31 @@ class McpToolRegistry {
       Map<String, dynamic> args) async {
     final acctId = args['accountId']?.toString();
     final conid = args['conid'];
-    final side = args['side']?.toString()?.toUpperCase();
-    final orderType = args['orderType']?.toString()?.toUpperCase();
+    final side = args['side']?.toString();
+    final orderType = args['orderType']?.toString();
     final quantity = args['quantity'];
     final price = args['price'];
-    final auxPrice = args['auxPrice'];
-    final trailingPercent = args['trailingPercent'];
-    final tif = args['tif']?.toString() ?? 'DAY';
-    final outsideRth = args['outsideRth'] == true;
 
     if (acctId == null ||
-        acctId.isEmpty ||
         conid == null ||
         side == null ||
         orderType == null ||
         quantity == null) {
       return McpResponseBuilder.buildToolErrorResponse(
-          'Invalid or missing order parameters. Required: accountId, conid, side, orderType, quantity');
+          'Invalid or missing order parameters');
     }
-
-    if ((orderType == 'LMT' ||
-            orderType == 'STP' ||
-            orderType == 'TRAIL LIMIT') &&
-        price == null) {
-      return McpResponseBuilder.buildToolErrorResponse(
-          'price is required when orderType is $orderType');
-    }
-
-    if ((orderType == 'TRAIL' || orderType == 'TRAIL LIMIT') &&
-        auxPrice == null &&
-        trailingPercent == null) {
-      return McpResponseBuilder.buildToolErrorResponse(
-          'Either auxPrice or trailingPercent is required for $orderType orders');
-    }
-
-    final singleOrder = <String, dynamic>{
-      'acctId': acctId,
-      'conid': conid,
-      'orderType': orderType,
-      if (price != null) 'price': price,
-      if (auxPrice != null) ...{
-        'auxPrice': auxPrice,
-        'trailingAmt': auxPrice,
-        'trailingType': 'amt',
-      },
-      if (trailingPercent != null) ...{
-        'trailingPercent': trailingPercent,
-        'trailingAmt': trailingPercent,
-        'trailingType': '%',
-      },
-      'side': side,
-      'quantity': quantity,
-      'tif': tif,
-      if (outsideRth) 'outsideRTH': true,
-    };
 
     final orderPayload = {
-      'orders': [singleOrder]
+      'orders': [
+        {
+          'conid': conid,
+          'orderType': orderType,
+          'price': price,
+          'side': side,
+          'quantity': quantity,
+          'tif': 'DAY',
+        }
+      ]
     };
 
     final uri = _config.baseHttpUri.resolve('iserver/account/$acctId/orders');
@@ -646,6 +655,70 @@ class McpToolRegistry {
     }
 
     final uri = _config.baseHttpUri.resolve('portfolio/$acctId/ledger');
+    final res = await _client.get(uri);
+
+    if (res.statusCode == 200) {
+      return McpResponseBuilder.buildToolSuccessResponse(res.body);
+    } else {
+      return _buildErrorFromResponse(res);
+    }
+  }
+
+  Future<Map<String, dynamic>> _executeGetOptionChains(
+      Map<String, dynamic> args) async {
+    final conid = args['conid'];
+    if (conid == null) {
+      return McpResponseBuilder.buildToolErrorResponse(
+          'Missing required argument: conid');
+    }
+
+    final secType = args['secType']?.toString() ?? 'OPT';
+    final month = args['month']?.toString();
+
+    final queryParams = <String, String>{
+      'conid': conid.toString(),
+      'sectype': secType,
+      if (month != null && month.isNotEmpty) 'month': month,
+    };
+
+    final uri = _config.baseHttpUri
+        .resolve('iserver/secdef/strikes')
+        .replace(queryParameters: queryParams);
+    final res = await _client.get(uri);
+
+    if (res.statusCode == 200) {
+      return McpResponseBuilder.buildToolSuccessResponse(res.body);
+    } else {
+      return _buildErrorFromResponse(res);
+    }
+  }
+
+  Future<Map<String, dynamic>> _executeResolveOptionContract(
+      Map<String, dynamic> args) async {
+    final underlyingConid = args['underlyingConid'];
+    final rightRaw = args['right']?.toString()?.toUpperCase();
+    final strike = args['strike'];
+    final expiration = args['expiration']?.toString();
+    final secType = args['secType']?.toString() ?? 'OPT';
+
+    if (underlyingConid == null || rightRaw == null || strike == null) {
+      return McpResponseBuilder.buildToolErrorResponse(
+          'Missing required arguments. Required: underlyingConid, right, strike');
+    }
+
+    final right = (rightRaw == 'CALL' || rightRaw == 'C') ? 'C' : 'P';
+
+    final queryParams = <String, String>{
+      'conid': underlyingConid.toString(),
+      'sectype': secType,
+      'right': right,
+      'strike': strike.toString(),
+      if (expiration != null && expiration.isNotEmpty) 'month': expiration,
+    };
+
+    final uri = _config.baseHttpUri
+        .resolve('iserver/secdef/info')
+        .replace(queryParameters: queryParams);
     final res = await _client.get(uri);
 
     if (res.statusCode == 200) {
