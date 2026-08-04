@@ -58,7 +58,7 @@ void main() {
       expect(toolNames, contains('modify_order'));
       expect(toolNames, contains('get_account_summary'));
       expect(toolNames, contains('get_cash_ledger'));
-      expect(toolNames, contains('get_portfolio_pnl'));
+      expect(toolNames, contains('preview_order'));
       expect(toolNames, contains('ibkr_login'));
       expect(toolNames, contains('ibkr_logout'));
     });
@@ -69,12 +69,26 @@ void main() {
       expect(res['content'].first['text'], contains('Unknown tool name'));
     });
 
-    test('callTool get_portfolio_pnl returns error if missing accountId',
+    test('callTool preview_order validation for missing required arguments',
         () async {
-      final res = await registry.callTool('get_portfolio_pnl', {});
+      final res = await registry.callTool('preview_order', {});
       expect(res['isError'], isTrue);
       expect(res['content'].first['text'],
-          contains('Missing required argument: accountId'));
+          contains('Missing required order parameters'));
+    });
+
+    test('callTool preview_order validation for LMT order missing price',
+        () async {
+      final res = await registry.callTool('preview_order', {
+        'accountId': 'DU123456',
+        'conid': 265598,
+        'side': 'BUY',
+        'quantity': 10,
+        'orderType': 'LMT',
+      });
+      expect(res['isError'], isTrue);
+      expect(res['content'].first['text'],
+          contains('price is required when orderType is LMT'));
     });
 
     test('callTool get_positions returns error if missing accountId argument',
