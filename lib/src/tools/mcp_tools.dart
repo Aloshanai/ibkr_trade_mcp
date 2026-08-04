@@ -430,8 +430,16 @@ class McpToolRegistry {
       'conid': conid,
       'orderType': orderType,
       if (price != null) 'price': price,
-      if (auxPrice != null) 'auxPrice': auxPrice,
-      if (trailingPercent != null) 'trailingPercent': trailingPercent,
+      if (auxPrice != null) ...{
+        'auxPrice': auxPrice,
+        'trailingAmt': auxPrice,
+        'trailingType': 'amt',
+      },
+      if (trailingPercent != null) ...{
+        'trailingPercent': trailingPercent,
+        'trailingAmt': trailingPercent,
+        'trailingType': '%',
+      },
       'side': side,
       'quantity': quantity,
       'tif': tif,
