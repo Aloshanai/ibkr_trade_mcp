@@ -45,7 +45,8 @@ class McpToolRegistry {
           'properties': {
             'accountId': {
               'type': 'string',
-              'description': 'The target IBKR trading account ID (e.g. DU123456)',
+              'description':
+                  'The target IBKR trading account ID (e.g. DU123456)',
             },
           },
           'required': ['accountId'],
@@ -64,7 +65,8 @@ class McpToolRegistry {
             },
             'conid': {
               'type': 'integer',
-              'description': 'Contract ID of the security (e.g. 265598 for AAPL)',
+              'description':
+                  'Contract ID of the security (e.g. 265598 for AAPL)',
             },
             'side': {
               'type': 'string',
@@ -101,7 +103,8 @@ class McpToolRegistry {
             },
             'confirmed': {
               'type': 'boolean',
-              'description': 'Set to true to confirm risk disclosure, or false to cancel',
+              'description':
+                  'Set to true to confirm risk disclosure, or false to cancel',
             },
           },
           'required': ['replyId', 'confirmed'],
@@ -131,7 +134,8 @@ class McpToolRegistry {
           'properties': {
             'conid': {
               'type': 'integer',
-              'description': 'Contract ID of the security (e.g. 265598 for AAPL)',
+              'description':
+                  'Contract ID of the security (e.g. 265598 for AAPL)',
             },
           },
           'required': ['conid'],
@@ -146,15 +150,18 @@ class McpToolRegistry {
           'properties': {
             'conid': {
               'type': 'integer',
-              'description': 'Contract ID of the security (e.g. 265598 for AAPL)',
+              'description':
+                  'Contract ID of the security (e.g. 265598 for AAPL)',
             },
             'period': {
               'type': 'string',
-              'description': 'Historical time duration (e.g. 1d, 1w, 1m, 1y). Default is 1d.',
+              'description':
+                  'Historical time duration (e.g. 1d, 1w, 1m, 1y). Default is 1d.',
             },
             'bar': {
               'type': 'string',
-              'description': 'Candlestick bar size (e.g. 1min, 5min, 1h, 1d). Default is 1h.',
+              'description':
+                  'Candlestick bar size (e.g. 1min, 5min, 1h, 1d). Default is 1h.',
             },
           },
           'required': ['conid'],
@@ -246,6 +253,75 @@ class McpToolRegistry {
         },
       },
       {
+        'name': 'get_option_chains',
+        'description':
+            'Fetch available option expiration dates, strike prices, and available option parameters for an underlying security contract ID (conid).',
+        'inputSchema': {
+          'type': 'object',
+          'properties': {
+            'conid': {
+              'type': 'integer',
+              'description':
+                  'Contract ID of the underlying security (e.g. 265598 for AAPL)',
+            },
+            'symbol': {
+              'type': 'string',
+              'description':
+                  'Ticker symbol of underlying security (e.g. AAPL). Highly recommended to pre-warm IBKR option chain cache.',
+            },
+            'secType': {
+              'type': 'string',
+              'description': 'Security type (OPT or FOP). Defaults to OPT.',
+            },
+            'month': {
+              'type': 'string',
+              'description':
+                  'Expiration month filter (e.g. AUG26, SEP26). Optional.',
+            },
+          },
+          'required': ['conid'],
+        },
+      },
+      {
+        'name': 'resolve_option_contract',
+        'description':
+            'Resolve the exact contract ID (conid) for a specific option contract given underlying conid, expiration date, strike price, and right (CALL/PUT).',
+        'inputSchema': {
+          'type': 'object',
+          'properties': {
+            'underlyingConid': {
+              'type': 'integer',
+              'description':
+                  'Contract ID of underlying security (e.g. 265598 for AAPL)',
+            },
+            'symbol': {
+              'type': 'string',
+              'description':
+                  'Ticker symbol of underlying security (e.g. AAPL).',
+            },
+            'right': {
+              'type': 'string',
+              'enum': ['C', 'P', 'CALL', 'PUT'],
+              'description': 'Option right: C / CALL or P / PUT',
+            },
+            'strike': {
+              'type': 'number',
+              'description': 'Option strike price (e.g. 200.0)',
+            },
+            'expiration': {
+              'type': 'string',
+              'description':
+                  'Option expiration month or date (e.g. AUG26 or 20260821)',
+            },
+            'secType': {
+              'type': 'string',
+              'description': 'Security type (OPT or FOP). Defaults to OPT.',
+            },
+          },
+          'required': ['underlyingConid', 'right', 'strike'],
+        },
+      },
+      {
         'name': 'ibkr_login',
         'description':
             'Automatically open a web browser pointing to the local IBKR Client Portal Gateway authentication page.',
@@ -299,6 +375,10 @@ class McpToolRegistry {
           return await _executeGetAccountSummary(args);
         case 'get_cash_ledger':
           return await _executeGetCashLedger(args);
+        case 'get_option_chains':
+          return await _executeGetOptionChains(args);
+        case 'resolve_option_contract':
+          return await _executeResolveOptionContract(args);
         case 'ibkr_login':
           return await _executeIbkrLogin();
         case 'ibkr_logout':
@@ -367,7 +447,11 @@ class McpToolRegistry {
     final quantity = args['quantity'];
     final price = args['price'];
 
-    if (acctId == null || conid == null || side == null || orderType == null || quantity == null) {
+    if (acctId == null ||
+        conid == null ||
+        side == null ||
+        orderType == null ||
+        quantity == null) {
       return McpResponseBuilder.buildToolErrorResponse(
           'Invalid or missing order parameters');
     }
@@ -451,8 +535,8 @@ class McpToolRegistry {
           'Missing required argument: conid');
     }
 
-    final uri = _config.baseHttpUri
-        .resolve('iserver/marketdata/snapshot?conids=$conid&fields=31,84,86,88,85');
+    final uri = _config.baseHttpUri.resolve(
+        'iserver/marketdata/snapshot?conids=$conid&fields=31,84,86,88,85');
     final res = await _client.get(uri);
 
     if (res.statusCode == 200) {
@@ -473,8 +557,8 @@ class McpToolRegistry {
     final period = args['period']?.toString() ?? '1d';
     final bar = args['bar']?.toString() ?? '1h';
 
-    final uri = _config.baseHttpUri
-        .resolve('iserver/marketdata/history?conid=$conid&period=$period&bar=$bar');
+    final uri = _config.baseHttpUri.resolve(
+        'iserver/marketdata/history?conid=$conid&period=$period&bar=$bar');
     final res = await _client.get(uri);
 
     if (res.statusCode == 200) {
@@ -500,12 +584,16 @@ class McpToolRegistry {
     final acctId = args['accountId']?.toString();
     final orderId = args['orderId']?.toString();
 
-    if (acctId == null || acctId.isEmpty || orderId == null || orderId.isEmpty) {
+    if (acctId == null ||
+        acctId.isEmpty ||
+        orderId == null ||
+        orderId.isEmpty) {
       return McpResponseBuilder.buildToolErrorResponse(
           'Missing required arguments: accountId and orderId');
     }
 
-    final uri = _config.baseHttpUri.resolve('iserver/account/$acctId/order/$orderId');
+    final uri =
+        _config.baseHttpUri.resolve('iserver/account/$acctId/order/$orderId');
     final res = await _client.delete(uri);
 
     if (res.statusCode == 200) {
@@ -522,7 +610,10 @@ class McpToolRegistry {
     final price = args['price'];
     final quantity = args['quantity'];
 
-    if (acctId == null || acctId.isEmpty || orderId == null || orderId.isEmpty) {
+    if (acctId == null ||
+        acctId.isEmpty ||
+        orderId == null ||
+        orderId.isEmpty) {
       return McpResponseBuilder.buildToolErrorResponse(
           'Missing required arguments: accountId and orderId');
     }
@@ -532,7 +623,8 @@ class McpToolRegistry {
       'quantity': quantity,
     };
 
-    final uri = _config.baseHttpUri.resolve('iserver/account/$acctId/order/$orderId');
+    final uri =
+        _config.baseHttpUri.resolve('iserver/account/$acctId/order/$orderId');
     final res = await _client.post(
       uri,
       headers: {'Content-Type': 'application/json'},
@@ -582,9 +674,104 @@ class McpToolRegistry {
     }
   }
 
+  Future<Map<String, dynamic>> _executeGetOptionChains(
+      Map<String, dynamic> args) async {
+    final conid = args['conid'];
+    final symbol = args['symbol']?.toString();
+    if (conid == null) {
+      return McpResponseBuilder.buildToolErrorResponse(
+          'Missing required argument: conid');
+    }
+
+    final secType = args['secType']?.toString() ?? 'OPT';
+    final month = args['month']?.toString();
+
+    // IBKR Prerequisite: Warm up secdef cache for the contract symbol before querying strikes
+    if (symbol != null && symbol.isNotEmpty) {
+      try {
+        final searchUri = _config.baseHttpUri.resolve('iserver/secdef/search');
+        await _client.post(
+          searchUri,
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'symbol': symbol}),
+        );
+      } catch (_) {
+        // Ignore search pre-warm errors and proceed to strikes
+      }
+    }
+
+    final queryParams = <String, String>{
+      'conid': conid.toString(),
+      'sectype': secType,
+      if (month != null && month.isNotEmpty) 'month': month,
+    };
+
+    final uri = _config.baseHttpUri
+        .resolve('iserver/secdef/strikes')
+        .replace(queryParameters: queryParams);
+    final res = await _client.get(uri);
+
+    if (res.statusCode == 200) {
+      return McpResponseBuilder.buildToolSuccessResponse(res.body);
+    } else {
+      return _buildErrorFromResponse(res);
+    }
+  }
+
+  Future<Map<String, dynamic>> _executeResolveOptionContract(
+      Map<String, dynamic> args) async {
+    final underlyingConid = args['underlyingConid'];
+    final symbol = args['symbol']?.toString();
+    final rightRaw = args['right']?.toString()?.toUpperCase();
+    final strike = args['strike'];
+    final expiration = args['expiration']?.toString();
+    final secType = args['secType']?.toString() ?? 'OPT';
+
+    if (underlyingConid == null || rightRaw == null || strike == null) {
+      return McpResponseBuilder.buildToolErrorResponse(
+          'Missing required arguments. Required: underlyingConid, right, strike');
+    }
+
+    final right = (rightRaw == 'CALL' || rightRaw == 'C') ? 'C' : 'P';
+
+    // IBKR Prerequisite: Warm up secdef cache for the underlying symbol
+    if (symbol != null && symbol.isNotEmpty) {
+      try {
+        final searchUri = _config.baseHttpUri.resolve('iserver/secdef/search');
+        await _client.post(
+          searchUri,
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'symbol': symbol}),
+        );
+      } catch (_) {
+        // Ignore pre-warm errors
+      }
+    }
+
+    final queryParams = <String, String>{
+      'conid': underlyingConid.toString(),
+      'sectype': secType,
+      'right': right,
+      'strike': strike.toString(),
+      if (expiration != null && expiration.isNotEmpty) 'month': expiration,
+    };
+
+    final uri = _config.baseHttpUri
+        .resolve('iserver/secdef/info')
+        .replace(queryParameters: queryParams);
+    final res = await _client.get(uri);
+
+    if (res.statusCode == 200) {
+      return McpResponseBuilder.buildToolSuccessResponse(res.body);
+    } else {
+      return _buildErrorFromResponse(res);
+    }
+  }
+
   Future<Map<String, dynamic>> _executeIbkrLogin() async {
     final baseUrl = 'https://${_config.host}:${_config.port}';
-    McpLogger.info('Attempting to open browser for IBKR Gateway login: $baseUrl');
+    McpLogger.info(
+        'Attempting to open browser for IBKR Gateway login: $baseUrl');
     await _openBrowser(baseUrl);
     return McpResponseBuilder.buildToolSuccessResponse(
         'Successfully opened browser window/tab at $baseUrl. Please complete your login and 2FA authentication in the browser page.');
@@ -592,7 +779,8 @@ class McpToolRegistry {
 
   Future<Map<String, dynamic>> _executeIbkrLogout() async {
     final uri = _config.baseHttpUri.resolve('logout');
-    final res = await _client.post(uri, headers: {'Content-Type': 'application/json'});
+    final res =
+        await _client.post(uri, headers: {'Content-Type': 'application/json'});
 
     // Clear client cookies
     _client.cookies.clear();
