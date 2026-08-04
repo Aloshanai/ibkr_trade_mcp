@@ -58,7 +58,6 @@ void main() {
       expect(toolNames, contains('modify_order'));
       expect(toolNames, contains('get_account_summary'));
       expect(toolNames, contains('get_cash_ledger'));
-      expect(toolNames, contains('preview_order'));
       expect(toolNames, contains('ibkr_login'));
       expect(toolNames, contains('ibkr_logout'));
     });
@@ -69,26 +68,19 @@ void main() {
       expect(res['content'].first['text'], contains('Unknown tool name'));
     });
 
-    test('callTool preview_order validation for missing required arguments',
+    test(
+        'callTool place_order validation for TRAIL order missing auxPrice/trailingPercent',
         () async {
-      final res = await registry.callTool('preview_order', {});
-      expect(res['isError'], isTrue);
-      expect(res['content'].first['text'],
-          contains('Missing required order parameters'));
-    });
-
-    test('callTool preview_order validation for LMT order missing price',
-        () async {
-      final res = await registry.callTool('preview_order', {
+      final res = await registry.callTool('place_order', {
         'accountId': 'DU123456',
         'conid': 265598,
-        'side': 'BUY',
+        'side': 'SELL',
         'quantity': 10,
-        'orderType': 'LMT',
+        'orderType': 'TRAIL',
       });
       expect(res['isError'], isTrue);
       expect(res['content'].first['text'],
-          contains('price is required when orderType is LMT'));
+          contains('Either auxPrice or trailingPercent is required'));
     });
 
     test('callTool get_positions returns error if missing accountId argument',

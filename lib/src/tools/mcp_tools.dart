@@ -55,13 +55,13 @@ class McpToolRegistry {
       {
         'name': 'place_order',
         'description':
-            'Submit a trade order (buy/sell equities or options) to the IBKR Gateway.',
+            'Submit a trade order (buy/sell equities, options, or trailing stop orders) to the IBKR Gateway.',
         'inputSchema': {
           'type': 'object',
           'properties': {
             'accountId': {
               'type': 'string',
-              'description': 'Trading account ID',
+              'description': 'Trading account ID (e.g. DU123456)',
             },
             'conid': {
               'type': 'integer',
@@ -75,16 +75,38 @@ class McpToolRegistry {
             },
             'orderType': {
               'type': 'string',
-              'enum': ['LMT', 'MKT', 'STP'],
-              'description': 'Type of order',
+              'enum': ['LMT', 'MKT', 'STP', 'TRAIL', 'TRAIL LIMIT'],
+              'description':
+                  'Type of order (LMT, MKT, STP, TRAIL, or TRAIL LIMIT)',
             },
             'price': {
               'type': 'number',
-              'description': 'Limit price (required for LMT and STP orders)',
+              'description':
+                  'Limit price (required for LMT, STP, and TRAIL LIMIT orders)',
             },
             'quantity': {
               'type': 'number',
               'description': 'Number of shares/contracts',
+            },
+            'auxPrice': {
+              'type': 'number',
+              'description':
+                  'Trailing stop dollar amount (e.g. 5.00 for \$5 trailing stop gap)',
+            },
+            'trailingPercent': {
+              'type': 'number',
+              'description':
+                  'Trailing stop percentage (e.g. 2.5 for 2.5% trailing stop gap)',
+            },
+            'tif': {
+              'type': 'string',
+              'enum': ['DAY', 'GTC', 'IOC'],
+              'description': 'Time in force (defaults to DAY)',
+            },
+            'outsideRth': {
+              'type': 'boolean',
+              'description':
+                  'Allow execution outside regular trading hours (RTH)',
             },
           },
           'required': ['accountId', 'conid', 'side', 'orderType', 'quantity'],
@@ -253,49 +275,6 @@ class McpToolRegistry {
         },
       },
       {
-        'name': 'preview_order',
-        'description':
-            'Preview order impact (pre-trade margin changes, estimated commission/fees, equity impact, and risk warnings) before placing a live order.',
-        'inputSchema': {
-          'type': 'object',
-          'properties': {
-            'accountId': {
-              'type': 'string',
-              'description': 'Trading account ID (e.g. DU123456)',
-            },
-            'conid': {
-              'type': 'integer',
-              'description':
-                  'Contract ID of the security (e.g. 265598 for AAPL)',
-            },
-            'side': {
-              'type': 'string',
-              'enum': ['BUY', 'SELL'],
-              'description': 'Order side (BUY or SELL)',
-            },
-            'orderType': {
-              'type': 'string',
-              'enum': ['LMT', 'MKT', 'STP'],
-              'description': 'Type of order',
-            },
-            'price': {
-              'type': 'number',
-              'description': 'Limit price (required for LMT and STP orders)',
-            },
-            'quantity': {
-              'type': 'number',
-              'description': 'Number of shares or contracts',
-            },
-            'tif': {
-              'type': 'string',
-              'enum': ['DAY', 'GTC', 'IOC'],
-              'description': 'Time in force (defaults to DAY)',
-            },
-          },
-          'required': ['accountId', 'conid', 'side', 'orderType', 'quantity'],
-        },
-      },
-      {
         'name': 'ibkr_login',
         'description':
             'Automatically open a web browser pointing to the local IBKR Client Portal Gateway authentication page.',
@@ -349,8 +328,6 @@ class McpToolRegistry {
           return await _executeGetAccountSummary(args);
         case 'get_cash_ledger':
           return await _executeGetCashLedger(args);
-        case 'preview_order':
-          return await _executePreviewOrder(args);
         case 'ibkr_login':
           return await _executeIbkrLogin();
         case 'ibkr_logout':
@@ -414,31 +391,55 @@ class McpToolRegistry {
       Map<String, dynamic> args) async {
     final acctId = args['accountId']?.toString();
     final conid = args['conid'];
-    final side = args['side']?.toString();
-    final orderType = args['orderType']?.toString();
+    final side = args['side']?.toString()?.toUpperCase();
+    final orderType = args['orderType']?.toString()?.toUpperCase();
     final quantity = args['quantity'];
     final price = args['price'];
+    final auxPrice = args['auxPrice'];
+    final trailingPercent = args['trailingPercent'];
+    final tif = args['tif']?.toString() ?? 'DAY';
+    final outsideRth = args['outsideRth'] == true;
 
     if (acctId == null ||
+        acctId.isEmpty ||
         conid == null ||
         side == null ||
         orderType == null ||
         quantity == null) {
       return McpResponseBuilder.buildToolErrorResponse(
-          'Invalid or missing order parameters');
+          'Invalid or missing order parameters. Required: accountId, conid, side, orderType, quantity');
     }
 
+    if ((orderType == 'LMT' ||
+            orderType == 'STP' ||
+            orderType == 'TRAIL LIMIT') &&
+        price == null) {
+      return McpResponseBuilder.buildToolErrorResponse(
+          'price is required when orderType is $orderType');
+    }
+
+    if ((orderType == 'TRAIL' || orderType == 'TRAIL LIMIT') &&
+        auxPrice == null &&
+        trailingPercent == null) {
+      return McpResponseBuilder.buildToolErrorResponse(
+          'Either auxPrice or trailingPercent is required for $orderType orders');
+    }
+
+    final singleOrder = <String, dynamic>{
+      'acctId': acctId,
+      'conid': conid,
+      'orderType': orderType,
+      if (price != null) 'price': price,
+      if (auxPrice != null) 'auxPrice': auxPrice,
+      if (trailingPercent != null) 'trailingPercent': trailingPercent,
+      'side': side,
+      'quantity': quantity,
+      'tif': tif,
+      if (outsideRth) 'outsideRTH': true,
+    };
+
     final orderPayload = {
-      'orders': [
-        {
-          'conid': conid,
-          'orderType': orderType,
-          'price': price,
-          'side': side,
-          'quantity': quantity,
-          'tif': 'DAY',
-        }
-      ]
+      'orders': [singleOrder]
     };
 
     final uri = _config.baseHttpUri.resolve('iserver/account/$acctId/orders');
@@ -638,60 +639,6 @@ class McpToolRegistry {
 
     final uri = _config.baseHttpUri.resolve('portfolio/$acctId/ledger');
     final res = await _client.get(uri);
-
-    if (res.statusCode == 200) {
-      return McpResponseBuilder.buildToolSuccessResponse(res.body);
-    } else {
-      return _buildErrorFromResponse(res);
-    }
-  }
-
-  Future<Map<String, dynamic>> _executePreviewOrder(
-      Map<String, dynamic> args) async {
-    final acctId = args['accountId']?.toString();
-    final conid = args['conid'];
-    final side = args['side']?.toString()?.toUpperCase();
-    final orderType = args['orderType']?.toString()?.toUpperCase();
-    final quantity = args['quantity'];
-    final price = args['price'];
-    final tif = args['tif']?.toString() ?? 'DAY';
-
-    if (acctId == null ||
-        acctId.isEmpty ||
-        conid == null ||
-        side == null ||
-        orderType == null ||
-        quantity == null) {
-      return McpResponseBuilder.buildToolErrorResponse(
-          'Missing required order parameters. Required: accountId, conid, side, orderType, quantity');
-    }
-
-    if ((orderType == 'LMT' || orderType == 'STP') && price == null) {
-      return McpResponseBuilder.buildToolErrorResponse(
-          'price is required when orderType is $orderType');
-    }
-
-    final whatIfPayload = {
-      'orders': [
-        {
-          'acctId': acctId,
-          'conid': conid,
-          'orderType': orderType,
-          if (price != null) 'price': price,
-          'side': side,
-          'quantity': quantity,
-          'tif': tif,
-        }
-      ]
-    };
-
-    final uri =
-        _config.baseHttpUri.resolve('iserver/account/$acctId/orders/whatif');
-    final res = await _client.post(
-      uri,
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(whatIfPayload),
-    );
 
     if (res.statusCode == 200) {
       return McpResponseBuilder.buildToolSuccessResponse(res.body);
