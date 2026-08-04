@@ -91,6 +91,71 @@ class McpToolRegistry {
         },
       },
       {
+        'name': 'place_bracket_order',
+        'description':
+            'Submit a parent entry order with attached Take-Profit (Limit) and Stop-Loss (Stop) child exit orders for automated risk management.',
+        'inputSchema': {
+          'type': 'object',
+          'properties': {
+            'accountId': {
+              'type': 'string',
+              'description': 'Trading account ID (e.g. DU123456)',
+            },
+            'conid': {
+              'type': 'integer',
+              'description':
+                  'Contract ID of the security (e.g. 265598 for AAPL)',
+            },
+            'side': {
+              'type': 'string',
+              'enum': ['BUY', 'SELL'],
+              'description': 'Parent entry order side (BUY or SELL)',
+            },
+            'quantity': {
+              'type': 'number',
+              'description': 'Number of shares or contracts',
+            },
+            'orderType': {
+              'type': 'string',
+              'enum': ['LMT', 'MKT'],
+              'description': 'Parent entry order type (LMT or MKT)',
+            },
+            'entryPrice': {
+              'type': 'number',
+              'description':
+                  'Limit price for parent entry order (required if orderType is LMT)',
+            },
+            'takeProfitPrice': {
+              'type': 'number',
+              'description': 'Take-profit limit exit price',
+            },
+            'stopLossPrice': {
+              'type': 'number',
+              'description': 'Stop-loss stop exit price',
+            },
+            'tif': {
+              'type': 'string',
+              'enum': ['DAY', 'GTC', 'IOC'],
+              'description': 'Time in force (e.g. DAY, GTC). Defaults to DAY.',
+            },
+            'outsideRth': {
+              'type': 'boolean',
+              'description':
+                  'Allow execution outside regular trading hours (RTH)',
+            },
+          },
+          'required': [
+            'accountId',
+            'conid',
+            'side',
+            'quantity',
+            'orderType',
+            'takeProfitPrice',
+            'stopLossPrice'
+          ],
+        },
+      },
+      {
         'name': 'reply_to_challenge',
         'description':
             'Submit a confirmation reply (accept or decline) to an execution warning challenge prompt returned by IBKR.',
@@ -198,7 +263,7 @@ class McpToolRegistry {
       {
         'name': 'modify_order',
         'description':
-            'Modify limit price, quantity, or parameters of an active pending working order.',
+            'Modify limit price or quantity of an active pending working order.',
         'inputSchema': {
           'type': 'object',
           'properties': {
@@ -210,11 +275,6 @@ class McpToolRegistry {
               'type': 'string',
               'description': 'Order ID to modify',
             },
-            'conid': {
-              'type': 'integer',
-              'description':
-                  'Contract ID of the security (e.g. 265598 for AAPL)',
-            },
             'price': {
               'type': 'number',
               'description': 'Updated limit price',
@@ -222,22 +282,6 @@ class McpToolRegistry {
             'quantity': {
               'type': 'number',
               'description': 'Updated order quantity',
-            },
-            'side': {
-              'type': 'string',
-              'enum': ['BUY', 'SELL'],
-              'description': 'Order side (BUY or SELL)',
-            },
-            'orderType': {
-              'type': 'string',
-              'enum': ['LMT', 'MKT', 'STP'],
-              'description': 'Type of order',
-            },
-            'tif': {
-              'type': 'string',
-              'enum': ['DAY', 'GTC', 'IOC'],
-              'description':
-                  'Time in force (e.g. DAY, GTC, IOC). Defaults to DAY if omitted.',
             },
           },
           'required': ['accountId', 'orderId'],
@@ -309,6 +353,8 @@ class McpToolRegistry {
           return await _executeGetPositions(args);
         case 'place_order':
           return await _executePlaceOrder(args);
+        case 'place_bracket_order':
+          return await _executePlaceBracketOrder(args);
         case 'reply_to_challenge':
           return await _executeReplyToChallenge(args);
         case 'search_contracts':
@@ -431,6 +477,90 @@ class McpToolRegistry {
     }
   }
 
+  Future<Map<String, dynamic>> _executePlaceBracketOrder(
+      Map<String, dynamic> args) async {
+    final acctId = args['accountId']?.toString();
+    final conid = args['conid'];
+    final side = args['side']?.toString()?.toUpperCase();
+    final quantity = args['quantity'];
+    final orderType = args['orderType']?.toString()?.toUpperCase();
+    final entryPrice = args['entryPrice'];
+    final takeProfitPrice = args['takeProfitPrice'];
+    final stopLossPrice = args['stopLossPrice'];
+    final tif = args['tif']?.toString() ?? 'DAY';
+    final outsideRth = args['outsideRth'] == true;
+
+    if (acctId == null ||
+        acctId.isEmpty ||
+        conid == null ||
+        side == null ||
+        quantity == null ||
+        orderType == null ||
+        takeProfitPrice == null ||
+        stopLossPrice == null) {
+      return McpResponseBuilder.buildToolErrorResponse(
+          'Missing required arguments for bracket order. Required: accountId, conid, side, quantity, orderType, takeProfitPrice, stopLossPrice');
+    }
+
+    if (orderType == 'LMT' && entryPrice == null) {
+      return McpResponseBuilder.buildToolErrorResponse(
+          'entryPrice is required when orderType is LMT');
+    }
+
+    final exitSide = side == 'BUY' ? 'SELL' : 'BUY';
+    final parentCId = 'parent_${DateTime.now().millisecondsSinceEpoch}';
+
+    final parentOrder = <String, dynamic>{
+      'conid': conid,
+      'orderType': orderType,
+      if (entryPrice != null) 'price': entryPrice,
+      'side': side,
+      'quantity': quantity,
+      'tif': tif,
+      if (outsideRth) 'outsideRTH': true,
+      'cID': parentCId,
+    };
+
+    final takeProfitOrder = <String, dynamic>{
+      'conid': conid,
+      'orderType': 'LMT',
+      'price': takeProfitPrice,
+      'side': exitSide,
+      'quantity': quantity,
+      'tif': 'GTC',
+      if (outsideRth) 'outsideRTH': true,
+      'parentId': parentCId,
+    };
+
+    final stopLossOrder = <String, dynamic>{
+      'conid': conid,
+      'orderType': 'STP',
+      'price': stopLossPrice,
+      'side': exitSide,
+      'quantity': quantity,
+      'tif': 'GTC',
+      if (outsideRth) 'outsideRTH': true,
+      'parentId': parentCId,
+    };
+
+    final orderPayload = {
+      'orders': [parentOrder, takeProfitOrder, stopLossOrder]
+    };
+
+    final uri = _config.baseHttpUri.resolve('iserver/account/$acctId/orders');
+    final res = await _client.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(orderPayload),
+    );
+
+    if (res.statusCode == 200) {
+      return McpResponseBuilder.buildToolSuccessResponse(res.body);
+    } else {
+      return _buildErrorFromResponse(res);
+    }
+  }
+
   Future<Map<String, dynamic>> _executeReplyToChallenge(
       Map<String, dynamic> args) async {
     final replyId = args['replyId']?.toString();
@@ -483,35 +613,15 @@ class McpToolRegistry {
           'Missing required argument: conid');
     }
 
-    final fields = '31,55,70,71,84,86,88,7295,7296';
-    final uri = _config.baseHttpUri
-        .resolve('iserver/marketdata/snapshot?conids=$conid&fields=$fields');
-    var res = await _client.get(uri);
+    final uri = _config.baseHttpUri.resolve(
+        'iserver/marketdata/snapshot?conids=$conid&fields=31,84,86,88,85');
+    final res = await _client.get(uri);
 
     if (res.statusCode == 200) {
-      if (!_hasPriceFields(res.body)) {
-        // IBKR requires an initial snapshot request to initialize the market data stream.
-        // Wait 500ms and retry to fetch populated data.
-        await Future.delayed(const Duration(milliseconds: 500));
-        res = await _client.get(uri);
-      }
       return McpResponseBuilder.buildToolSuccessResponse(res.body);
     } else {
       return _buildErrorFromResponse(res);
     }
-  }
-
-  bool _hasPriceFields(String body) {
-    try {
-      final decoded = jsonDecode(body);
-      if (decoded is List && decoded.isNotEmpty && decoded.first is Map) {
-        final map = decoded.first as Map;
-        return map.containsKey('31') ||
-            map.containsKey('84') ||
-            map.containsKey('86');
-      }
-    } catch (_) {}
-    return false;
   }
 
   Future<Map<String, dynamic>> _executeGetHistoricalPrices(
@@ -575,12 +685,8 @@ class McpToolRegistry {
       Map<String, dynamic> args) async {
     final acctId = args['accountId']?.toString();
     final orderId = args['orderId']?.toString();
-    var conid = args['conid'];
     final price = args['price'];
     final quantity = args['quantity'];
-    final side = args['side']?.toString();
-    final orderType = args['orderType']?.toString();
-    final tif = args['tif']?.toString() ?? 'DAY';
 
     if (acctId == null ||
         acctId.isEmpty ||
@@ -590,18 +696,9 @@ class McpToolRegistry {
           'Missing required arguments: accountId and orderId');
     }
 
-    // Auto-lookup conid from working orders if missing from caller args
-    if (conid == null) {
-      conid = await _autoLookupConidForOrder(orderId, acctId);
-    }
-
-    final modifyPayload = <String, dynamic>{
-      if (conid != null) 'conid': conid,
-      if (price != null) 'price': price,
-      if (quantity != null) 'quantity': quantity,
-      if (side != null) 'side': side,
-      if (orderType != null) 'orderType': orderType,
-      'tif': tif,
+    final modifyPayload = {
+      'price': price,
+      'quantity': quantity,
     };
 
     final uri =
@@ -617,46 +714,6 @@ class McpToolRegistry {
     } else {
       return _buildErrorFromResponse(res);
     }
-  }
-
-  Future<dynamic> _autoLookupConidForOrder(String orderId, [String? acctId]) async {
-    try {
-      final uris = [
-        _config.baseHttpUri.resolve('iserver/account/orders'),
-        if (acctId != null && acctId.isNotEmpty)
-          _config.baseHttpUri.resolve('iserver/account/$acctId/orders'),
-      ];
-
-      for (final uri in uris) {
-        final res = await _client.get(uri);
-        if (res.statusCode == 200) {
-          final decoded = _safeJsonDecode(res.body);
-          List ordersList = [];
-          if (decoded is List) {
-            ordersList = decoded;
-          } else if (decoded is Map && decoded['orders'] is List) {
-            ordersList = decoded['orders'] as List;
-          }
-
-          for (final item in ordersList) {
-            if (item is Map) {
-              final id = item['orderId']?.toString() ??
-                  item['order_id']?.toString() ??
-                  item['id']?.toString();
-              if (id == orderId) {
-                final foundConid = item['conid'] ?? item['conId'] ?? item['conidex'];
-                if (foundConid != null) {
-                  return int.tryParse(foundConid.toString()) ?? foundConid;
-                }
-              }
-            }
-          }
-        }
-      }
-    } catch (e) {
-      McpLogger.error('Failed auto-lookup of conid for order $orderId', e);
-    }
-    return null;
   }
 
   Future<Map<String, dynamic>> _executeGetAccountSummary(
@@ -710,7 +767,7 @@ class McpToolRegistry {
         await _client.post(uri, headers: {'Content-Type': 'application/json'});
 
     // Clear client cookies
-    _client.clearCookies();
+    _client.cookies.clear();
 
     if (res.statusCode == 200) {
       return McpResponseBuilder.buildToolSuccessResponse(
