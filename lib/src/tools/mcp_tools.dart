@@ -722,7 +722,7 @@ class McpToolRegistry {
       Map<String, dynamic> args) async {
     final underlyingConid = args['underlyingConid'];
     final symbol = args['symbol']?.toString();
-    final rightRaw = args['right']?.toString()?.toUpperCase();
+    final rightRaw = args['right']?.toString().toUpperCase();
     final strike = args['strike'];
     final expiration = args['expiration']?.toString();
     final secType = args['secType']?.toString() ?? 'OPT';

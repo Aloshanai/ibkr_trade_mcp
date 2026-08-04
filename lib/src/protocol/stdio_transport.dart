@@ -33,10 +33,8 @@ class StdioServerTransport {
 
   /// Begins reading incoming lines from [stdin].
   void listen() {
-    _stdinSubscription = stdin
-        .transform(utf8.decoder)
-        .transform(const LineSplitter())
-        .listen(
+    _stdinSubscription =
+        stdin.transform(utf8.decoder).transform(const LineSplitter()).listen(
       (line) {
         final trimmed = line.trim();
         if (trimmed.isNotEmpty) {

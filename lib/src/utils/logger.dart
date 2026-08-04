@@ -20,7 +20,8 @@ class McpLogger {
     _log(LogLevel.warning, message);
   }
 
-  static void error(String message, [Object? exception, StackTrace? stackTrace]) {
+  static void error(String message,
+      [Object? exception, StackTrace? stackTrace]) {
     final buffer = StringBuffer(message);
     if (exception != null) buffer.write(' | Exception: $exception');
     _log(LogLevel.error, buffer.toString());

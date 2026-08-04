@@ -5,12 +5,19 @@ import 'package:ibkr_trade_mcp/ibkr_trade_mcp.dart';
 
 void main(List<String> arguments) async {
   final parser = ArgParser()
-    ..addOption('host', abbr: 'h', defaultsTo: 'localhost', help: 'IBKR Gateway host')
-    ..addOption('port', abbr: 'p', defaultsTo: '5000', help: 'IBKR Gateway port')
+    ..addOption('host',
+        abbr: 'h', defaultsTo: 'localhost', help: 'IBKR Gateway host')
+    ..addOption('port',
+        abbr: 'p', defaultsTo: '5000', help: 'IBKR Gateway port')
     ..addFlag('use-ssl', defaultsTo: true, help: 'Use HTTPS/SSL')
-    ..addFlag('bypass-ssl', abbr: 'k', defaultsTo: false, help: 'Bypass self-signed SSL verification')
-    ..addOption('tickle-interval', defaultsTo: '45', help: 'Tickle interval in seconds')
-    ..addFlag('help', abbr: '?', negatable: false, help: 'Show usage information');
+    ..addFlag('bypass-ssl',
+        abbr: 'k',
+        defaultsTo: false,
+        help: 'Bypass self-signed SSL verification')
+    ..addOption('tickle-interval',
+        defaultsTo: '45', help: 'Tickle interval in seconds')
+    ..addFlag('help',
+        abbr: '?', negatable: false, help: 'Show usage information');
 
   final ArgResults argResults;
   try {
@@ -31,7 +38,8 @@ void main(List<String> arguments) async {
   final port = int.tryParse(argResults['port'] as String) ?? 5000;
   final useSsl = argResults['use-ssl'] as bool;
   final bypassSsl = argResults['bypass-ssl'] as bool;
-  final tickleInterval = int.tryParse(argResults['tickle-interval'] as String) ?? 45;
+  final tickleInterval =
+      int.tryParse(argResults['tickle-interval'] as String) ?? 45;
 
   final config = GatewayConfig(
     host: host,

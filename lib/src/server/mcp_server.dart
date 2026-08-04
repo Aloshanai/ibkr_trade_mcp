@@ -18,8 +18,10 @@ class McpServer {
   late final rpc.Server _rpcServer;
 
   /// Creates an [McpServer] with optional custom [GatewayConfig].
-  McpServer({GatewayConfig? config}) : _config = config ?? const GatewayConfig() {
-    _httpClient = HttpClient(bypassSslVerification: _config.bypassSslVerification);
+  McpServer({GatewayConfig? config})
+      : _config = config ?? const GatewayConfig() {
+    _httpClient =
+        HttpClient(bypassSslVerification: _config.bypassSslVerification);
     _cookieClient = CookieClient(_httpClient);
     _tickler = SessionTickler(
       _cookieClient,
@@ -31,7 +33,8 @@ class McpServer {
 
   /// Starts the server, session keep-alive loop, and stdin/stdout JSON-RPC protocol.
   Future<void> start() async {
-    McpLogger.info('Starting MCP Server targeting IBKR Gateway: ${_config.baseHttpUri}');
+    McpLogger.info(
+        'Starting MCP Server targeting IBKR Gateway: ${_config.baseHttpUri}');
 
     // 1. Start background tickler loop
     _tickler.start();
@@ -58,7 +61,8 @@ class McpServer {
     });
 
     // Client notification: initialized
-    _rpcServer.registerMethod('notifications/initialized', (rpc.Parameters params) {
+    _rpcServer.registerMethod('notifications/initialized',
+        (rpc.Parameters params) {
       McpLogger.info('Client confirmed initialization.');
       return null;
     });
