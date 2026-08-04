@@ -675,6 +675,18 @@ class McpToolRegistry {
     final secType = args['secType']?.toString() ?? 'OPT';
     final month = args['month']?.toString();
 
+    // IBKR Prerequisite: Warm up secdef cache for the contract before querying strikes
+    try {
+      final searchUri = _config.baseHttpUri.resolve('iserver/secdef/search');
+      await _client.post(
+        searchUri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'symbol': conid.toString(), 'name': false}),
+      );
+    } catch (_) {
+      // Ignore search pre-warm errors and proceed to strikes
+    }
+
     final queryParams = <String, String>{
       'conid': conid.toString(),
       'sectype': secType,
@@ -707,6 +719,18 @@ class McpToolRegistry {
     }
 
     final right = (rightRaw == 'CALL' || rightRaw == 'C') ? 'C' : 'P';
+
+    // IBKR Prerequisite: Warm up secdef cache for the underlying contract
+    try {
+      final searchUri = _config.baseHttpUri.resolve('iserver/secdef/search');
+      await _client.post(
+        searchUri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'symbol': underlyingConid.toString(), 'name': false}),
+      );
+    } catch (_) {
+      // Ignore pre-warm errors
+    }
 
     final queryParams = <String, String>{
       'conid': underlyingConid.toString(),
