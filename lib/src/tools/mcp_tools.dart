@@ -253,18 +253,46 @@ class McpToolRegistry {
         },
       },
       {
-        'name': 'get_portfolio_pnl',
+        'name': 'preview_order',
         'description':
-            'Retrieve aggregated daily PnL, unrealized PnL, realized PnL, Net Liquidation Value, and position performance breakdown for an account.',
+            'Preview order impact (pre-trade margin changes, estimated commission/fees, equity impact, and risk warnings) before placing a live order.',
         'inputSchema': {
           'type': 'object',
           'properties': {
             'accountId': {
               'type': 'string',
-              'description': 'Target IBKR account ID (e.g. DU123456)',
+              'description': 'Trading account ID (e.g. DU123456)',
+            },
+            'conid': {
+              'type': 'integer',
+              'description':
+                  'Contract ID of the security (e.g. 265598 for AAPL)',
+            },
+            'side': {
+              'type': 'string',
+              'enum': ['BUY', 'SELL'],
+              'description': 'Order side (BUY or SELL)',
+            },
+            'orderType': {
+              'type': 'string',
+              'enum': ['LMT', 'MKT', 'STP'],
+              'description': 'Type of order',
+            },
+            'price': {
+              'type': 'number',
+              'description': 'Limit price (required for LMT and STP orders)',
+            },
+            'quantity': {
+              'type': 'number',
+              'description': 'Number of shares or contracts',
+            },
+            'tif': {
+              'type': 'string',
+              'enum': ['DAY', 'GTC', 'IOC'],
+              'description': 'Time in force (defaults to DAY)',
             },
           },
-          'required': ['accountId'],
+          'required': ['accountId', 'conid', 'side', 'orderType', 'quantity'],
         },
       },
       {
@@ -321,8 +349,8 @@ class McpToolRegistry {
           return await _executeGetAccountSummary(args);
         case 'get_cash_ledger':
           return await _executeGetCashLedger(args);
-        case 'get_portfolio_pnl':
-          return await _executeGetPortfolioPnl(args);
+        case 'preview_order':
+          return await _executePreviewOrder(args);
         case 'ibkr_login':
           return await _executeIbkrLogin();
         case 'ibkr_logout':
@@ -618,122 +646,58 @@ class McpToolRegistry {
     }
   }
 
-  Future<Map<String, dynamic>> _executeGetPortfolioPnl(
+  Future<Map<String, dynamic>> _executePreviewOrder(
       Map<String, dynamic> args) async {
     final acctId = args['accountId']?.toString();
-    if (acctId == null || acctId.isEmpty) {
+    final conid = args['conid'];
+    final side = args['side']?.toString()?.toUpperCase();
+    final orderType = args['orderType']?.toString()?.toUpperCase();
+    final quantity = args['quantity'];
+    final price = args['price'];
+    final tif = args['tif']?.toString() ?? 'DAY';
+
+    if (acctId == null ||
+        acctId.isEmpty ||
+        conid == null ||
+        side == null ||
+        orderType == null ||
+        quantity == null) {
       return McpResponseBuilder.buildToolErrorResponse(
-          'Missing required argument: accountId');
+          'Missing required order parameters. Required: accountId, conid, side, orderType, quantity');
     }
 
-    // 1. Fetch Account Summary
-    final summaryUri = _config.baseHttpUri.resolve('portfolio/$acctId/summary');
-    final summaryRes = await _client.get(summaryUri);
-
-    double netLiquidation = 0.0;
-    double unrealizedPnL = 0.0;
-    double realizedPnL = 0.0;
-    double buyingPower = 0.0;
-
-    if (summaryRes.statusCode == 200) {
-      final summaryDecoded = _safeJsonDecode(summaryRes.body);
-      if (summaryDecoded is Map) {
-        netLiquidation = _parseSummaryValue(summaryDecoded['netliquidation']);
-        unrealizedPnL = _parseSummaryValue(summaryDecoded['unrealizedpnl']);
-        realizedPnL = _parseSummaryValue(summaryDecoded['realizedpnl']);
-        buyingPower = _parseSummaryValue(summaryDecoded['buyingpower']);
-      }
+    if ((orderType == 'LMT' || orderType == 'STP') && price == null) {
+      return McpResponseBuilder.buildToolErrorResponse(
+          'price is required when orderType is $orderType');
     }
 
-    // 2. Fetch Partitioned Daily PnL
-    final pnlUri =
-        _config.baseHttpUri.resolve('iserver/account/pnl/partitioned');
-    final pnlRes = await _client.get(pnlUri);
-
-    double dailyPnL = 0.0;
-    if (pnlRes.statusCode == 200) {
-      final pnlDecoded = _safeJsonDecode(pnlRes.body);
-      if (pnlDecoded is Map) {
-        for (final entry in pnlDecoded.values) {
-          if (entry is Map && entry['dnl'] != null) {
-            dailyPnL += _parseDouble(entry['dnl']);
-          }
+    final whatIfPayload = {
+      'orders': [
+        {
+          'acctId': acctId,
+          'conid': conid,
+          'orderType': orderType,
+          if (price != null) 'price': price,
+          'side': side,
+          'quantity': quantity,
+          'tif': tif,
         }
-      }
-    }
-
-    // 3. Fetch Position Performance Breakdown
-    final positionsUri =
-        _config.baseHttpUri.resolve('portfolio/$acctId/positions/0');
-    final positionsRes = await _client.get(positionsUri);
-
-    final positionsList = <Map<String, dynamic>>[];
-    if (positionsRes.statusCode == 200) {
-      final posDecoded = _safeJsonDecode(positionsRes.body);
-      if (posDecoded is List) {
-        for (final pos in posDecoded) {
-          if (pos is Map) {
-            final symbol = pos['ticker'] ??
-                pos['contractDesc'] ??
-                pos['symbol'] ??
-                pos['conid']?.toString() ??
-                'UNKNOWN';
-            final qty = _parseDouble(pos['position']);
-            final avgCost = _parseDouble(pos['avgCost'] ?? pos['avgPrice']);
-            final marketPrice = _parseDouble(pos['mktPrice'] ?? pos['price']);
-            final marketValue = _parseDouble(pos['mktValue']);
-            final posUnrealized = _parseDouble(pos['unrealizedPnl']);
-            final posRealized = _parseDouble(pos['realizedPnl']);
-
-            positionsList.add({
-              'symbol': symbol,
-              'conid': pos['conid'],
-              'qty': qty,
-              'avgCost': avgCost,
-              'marketPrice': marketPrice,
-              'marketValue': marketValue,
-              'unrealizedPnL': posUnrealized,
-              'realizedPnL': posRealized,
-            });
-          }
-        }
-      }
-    }
-
-    // Auto-reconcile account-level unrealized & realized PnL from positions if top-level summary is 0
-    if (unrealizedPnL == 0.0 && positionsList.isNotEmpty) {
-      unrealizedPnL = positionsList.fold(
-          0.0, (sum, pos) => sum + (pos['unrealizedPnL'] as double? ?? 0.0));
-    }
-    if (realizedPnL == 0.0 && positionsList.isNotEmpty) {
-      realizedPnL = positionsList.fold(
-          0.0, (sum, pos) => sum + (pos['realizedPnL'] as double? ?? 0.0));
-    }
-
-    final pnlSummary = {
-      'account': acctId,
-      'dailyPnL': dailyPnL,
-      'unrealizedPnL': double.parse(unrealizedPnL.toStringAsFixed(2)),
-      'realizedPnL': double.parse(realizedPnL.toStringAsFixed(2)),
-      'netLiquidation': netLiquidation,
-      'buyingPower': buyingPower,
-      'positions': positionsList,
+      ]
     };
 
-    return McpResponseBuilder.buildToolSuccessResponse(jsonEncode(pnlSummary));
-  }
+    final uri =
+        _config.baseHttpUri.resolve('iserver/account/$acctId/orders/whatif');
+    final res = await _client.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(whatIfPayload),
+    );
 
-  double _parseSummaryValue(dynamic item) {
-    if (item is Map && item['amount'] != null) {
-      return _parseDouble(item['amount']);
+    if (res.statusCode == 200) {
+      return McpResponseBuilder.buildToolSuccessResponse(res.body);
+    } else {
+      return _buildErrorFromResponse(res);
     }
-    return _parseDouble(item);
-  }
-
-  double _parseDouble(dynamic val) {
-    if (val == null) return 0.0;
-    if (val is num) return val.toDouble();
-    return double.tryParse(val.toString()) ?? 0.0;
   }
 
   Future<Map<String, dynamic>> _executeIbkrLogin() async {
