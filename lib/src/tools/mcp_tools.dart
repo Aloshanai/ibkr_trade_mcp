@@ -508,7 +508,10 @@ class McpToolRegistry {
     }
 
     final exitSide = side == 'BUY' ? 'SELL' : 'BUY';
-    final parentCId = 'parent_${DateTime.now().millisecondsSinceEpoch}';
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final parentCOId = 'p_$timestamp';
+    final tpCOId = 'tp_$timestamp';
+    final slCOId = 'sl_$timestamp';
 
     final parentOrder = <String, dynamic>{
       'conid': conid,
@@ -518,29 +521,32 @@ class McpToolRegistry {
       'quantity': quantity,
       'tif': tif,
       if (outsideRth) 'outsideRTH': true,
-      'cID': parentCId,
+      'cOID': parentCOId,
     };
 
     final takeProfitOrder = <String, dynamic>{
       'conid': conid,
+      'cOID': tpCOId,
+      'parentId': parentCOId,
       'orderType': 'LMT',
       'price': takeProfitPrice,
       'side': exitSide,
       'quantity': quantity,
       'tif': 'GTC',
       if (outsideRth) 'outsideRTH': true,
-      'parentId': parentCId,
     };
 
     final stopLossOrder = <String, dynamic>{
       'conid': conid,
+      'cOID': slCOId,
+      'parentId': parentCOId,
       'orderType': 'STP',
       'price': stopLossPrice,
+      'auxPrice': stopLossPrice,
       'side': exitSide,
       'quantity': quantity,
       'tif': 'GTC',
       if (outsideRth) 'outsideRTH': true,
-      'parentId': parentCId,
     };
 
     final orderPayload = {
