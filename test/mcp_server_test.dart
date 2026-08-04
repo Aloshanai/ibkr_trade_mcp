@@ -58,6 +58,8 @@ void main() {
       expect(toolNames, contains('modify_order'));
       expect(toolNames, contains('get_account_summary'));
       expect(toolNames, contains('get_cash_ledger'));
+      expect(toolNames, contains('ibkr_login'));
+      expect(toolNames, contains('ibkr_logout'));
     });
 
     test('callTool returns error for unknown tool names', () async {
@@ -94,6 +96,12 @@ void main() {
       final res = await registry.callTool('get_account_summary', {});
       expect(res['isError'], isTrue);
       expect(res['content'].first['text'], contains('Missing required argument: accountId'));
+    });
+
+    test('callTool ibkr_login returns success message and triggers browser path', () async {
+      final res = await registry.callTool('ibkr_login', {});
+      expect(res['isError'], isFalse);
+      expect(res['content'].first['text'], contains('Successfully opened browser'));
     });
   });
 }
