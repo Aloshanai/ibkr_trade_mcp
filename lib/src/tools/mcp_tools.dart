@@ -514,6 +514,7 @@ class McpToolRegistry {
     final slCOId = 'sl_$timestamp';
 
     final parentOrder = <String, dynamic>{
+      'acctId': acctId,
       'conid': conid,
       'orderType': orderType,
       if (entryPrice != null) 'price': entryPrice,
@@ -525,9 +526,11 @@ class McpToolRegistry {
     };
 
     final takeProfitOrder = <String, dynamic>{
+      'acctId': acctId,
       'conid': conid,
       'cOID': tpCOId,
       'parentId': parentCOId,
+      'isChildOrder': true,
       'orderType': 'LMT',
       'price': takeProfitPrice,
       'side': exitSide,
@@ -537,9 +540,11 @@ class McpToolRegistry {
     };
 
     final stopLossOrder = <String, dynamic>{
+      'acctId': acctId,
       'conid': conid,
       'cOID': slCOId,
       'parentId': parentCOId,
+      'isChildOrder': true,
       'orderType': 'STP',
       'price': stopLossPrice,
       'auxPrice': stopLossPrice,
