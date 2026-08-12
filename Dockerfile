@@ -8,9 +8,10 @@ RUN dart pub get
 RUN dart compile exe bin/main.dart -o bin/ibkr_trade_mcp
 
 FROM scratch
-COPY --from=build /runtime/ /
-COPY --from=build /app/bin/ibkr_trade_mcp /app/bin/ibkr_trade_mcp
+COPY --chown=65532:65532 --from=build /runtime/ /
+COPY --chown=65532:65532 --from=build /app/bin/ibkr_trade_mcp /app/bin/ibkr_trade_mcp
 
 USER 65532:65532
 
 ENTRYPOINT ["/app/bin/ibkr_trade_mcp"]
+
