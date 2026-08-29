@@ -253,6 +253,128 @@ class McpToolRegistry {
         },
       },
       {
+        'name': 'place_bracket_order',
+        'description':
+            'Submit a linked 3-legged bracket order (entry, take-profit limit, and stop-loss protective order) to the IBKR Gateway in a single atomic payload.',
+        'inputSchema': {
+          'type': 'object',
+          'properties': {
+            'accountId': {
+              'type': 'string',
+              'description': 'Trading account ID',
+            },
+            'conid': {
+              'type': 'integer',
+              'description':
+                  'Contract ID of the security (e.g. 265598 for AAPL)',
+            },
+            'side': {
+              'type': 'string',
+              'enum': ['BUY', 'SELL'],
+              'description': 'Parent entry order side (BUY or SELL)',
+            },
+            'orderType': {
+              'type': 'string',
+              'enum': ['LMT', 'MKT'],
+              'description': 'Parent order type (LMT or MKT)',
+            },
+            'entryPrice': {
+              'type': 'number',
+              'description': 'Entry limit price (required if orderType is LMT)',
+            },
+            'quantity': {
+              'type': 'number',
+              'description': 'Number of shares/contracts',
+            },
+            'takeProfitPrice': {
+              'type': 'number',
+              'description': 'Take-profit limit exit price',
+            },
+            'stopLossPrice': {
+              'type': 'number',
+              'description': 'Stop-loss trigger/stop exit price',
+            },
+            'tif': {
+              'type': 'string',
+              'enum': ['DAY', 'GTC', 'IOC'],
+              'description': 'Time in force for parent order (defaults to DAY)',
+            },
+            'outsideRth': {
+              'type': 'boolean',
+              'description':
+                  'Allow execution outside regular trading hours (defaults to false)',
+            },
+          },
+          'required': [
+            'accountId',
+            'conid',
+            'side',
+            'orderType',
+            'quantity',
+            'takeProfitPrice',
+            'stopLossPrice'
+          ],
+        },
+      },
+      {
+        'name': 'get_portfolio_pnl',
+        'description':
+            'Retrieve comprehensive portfolio profit & loss (daily PnL, unrealized PnL, realized PnL, Net Liquidation Value, and individual position breakdown) for a specified account.',
+        'inputSchema': {
+          'type': 'object',
+          'properties': {
+            'accountId': {
+              'type': 'string',
+              'description': 'Trading account ID (e.g. DU123456)',
+            },
+          },
+          'required': ['accountId'],
+        },
+      },
+      {
+        'name': 'preview_order',
+        'description':
+            'Preview order impact (pre-trade margin changes, estimated commission/fees, equity impact, and risk warnings) before placing a live order.',
+        'inputSchema': {
+          'type': 'object',
+          'properties': {
+            'accountId': {
+              'type': 'string',
+              'description': 'Trading account ID (e.g. DU123456)',
+            },
+            'conid': {
+              'type': 'integer',
+              'description':
+                  'Contract ID of the security (e.g. 265598 for AAPL)',
+            },
+            'side': {
+              'type': 'string',
+              'enum': ['BUY', 'SELL'],
+              'description': 'Order side (BUY or SELL)',
+            },
+            'orderType': {
+              'type': 'string',
+              'enum': ['LMT', 'MKT', 'STP'],
+              'description': 'Type of order',
+            },
+            'price': {
+              'type': 'number',
+              'description': 'Limit price (required for LMT and STP orders)',
+            },
+            'quantity': {
+              'type': 'number',
+              'description': 'Number of shares or contracts',
+            },
+            'tif': {
+              'type': 'string',
+              'enum': ['DAY', 'GTC', 'IOC'],
+              'description': 'Time in force (defaults to DAY)',
+            },
+          },
+          'required': ['accountId', 'conid', 'side', 'orderType', 'quantity'],
+        },
+      },
+      {
         'name': 'get_option_chains',
         'description':
             'Fetch available option expiration dates, strike prices, and available option parameters for an underlying security contract ID (conid).',
@@ -357,6 +479,8 @@ class McpToolRegistry {
           return await _executeGetPositions(args);
         case 'place_order':
           return await _executePlaceOrder(args);
+        case 'place_bracket_order':
+          return await _executePlaceBracketOrder(args);
         case 'reply_to_challenge':
           return await _executeReplyToChallenge(args);
         case 'search_contracts':
@@ -375,6 +499,10 @@ class McpToolRegistry {
           return await _executeGetAccountSummary(args);
         case 'get_cash_ledger':
           return await _executeGetCashLedger(args);
+        case 'get_portfolio_pnl':
+          return await _executeGetPortfolioPnl(args);
+        case 'preview_order':
+          return await _executePreviewOrder(args);
         case 'get_option_chains':
           return await _executeGetOptionChains(args);
         case 'resolve_option_contract':
@@ -467,6 +595,101 @@ class McpToolRegistry {
           'tif': 'DAY',
         }
       ]
+    };
+
+    final uri = _config.baseHttpUri.resolve('iserver/account/$acctId/orders');
+    final res = await _client.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(orderPayload),
+    );
+
+    if (res.statusCode == 200) {
+      return McpResponseBuilder.buildToolSuccessResponse(res.body);
+    } else {
+      return _buildErrorFromResponse(res);
+    }
+  }
+
+  Future<Map<String, dynamic>> _executePlaceBracketOrder(
+      Map<String, dynamic> args) async {
+    final acctId = args['accountId']?.toString();
+    final conid = args['conid'];
+    final side = args['side']?.toString().toUpperCase();
+    final quantity = args['quantity'];
+    final orderType = args['orderType']?.toString().toUpperCase();
+    final entryPrice = args['entryPrice'];
+    final takeProfitPrice = args['takeProfitPrice'];
+    final stopLossPrice = args['stopLossPrice'];
+    final tif = args['tif']?.toString() ?? 'DAY';
+    final outsideRth = args['outsideRth'] == true;
+
+    if (acctId == null ||
+        acctId.isEmpty ||
+        conid == null ||
+        side == null ||
+        quantity == null ||
+        orderType == null ||
+        takeProfitPrice == null ||
+        stopLossPrice == null) {
+      return McpResponseBuilder.buildToolErrorResponse(
+          'Missing required arguments for bracket order. Required: accountId, conid, side, quantity, orderType, takeProfitPrice, stopLossPrice');
+    }
+
+    if (orderType == 'LMT' && entryPrice == null) {
+      return McpResponseBuilder.buildToolErrorResponse(
+          'entryPrice is required when orderType is LMT');
+    }
+
+    final exitSide = side == 'BUY' ? 'SELL' : 'BUY';
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final parentCOId = 'p_$timestamp';
+    final tpCOId = 'tp_$timestamp';
+    final slCOId = 'sl_$timestamp';
+
+    final parentOrder = <String, dynamic>{
+      'acctId': acctId,
+      'conid': conid,
+      'orderType': orderType,
+      if (entryPrice != null) 'price': entryPrice,
+      'side': side,
+      'quantity': quantity,
+      'tif': tif,
+      if (outsideRth) 'outsideRTH': true,
+      'cOID': parentCOId,
+    };
+
+    final takeProfitOrder = <String, dynamic>{
+      'acctId': acctId,
+      'conid': conid,
+      'cOID': tpCOId,
+      'parentId': parentCOId,
+      'isChildOrder': true,
+      'orderType': 'LMT',
+      'price': takeProfitPrice,
+      'side': exitSide,
+      'quantity': quantity,
+      'tif': 'GTC',
+      if (outsideRth) 'outsideRTH': true,
+    };
+
+    final stopLossOrder = <String, dynamic>{
+      'acctId': acctId,
+      'conid': conid,
+      'cOID': slCOId,
+      'parentId': parentCOId,
+      'isChildOrder': true,
+      'orderType': 'STP',
+      'price': stopLossPrice,
+      'auxPrice': stopLossPrice,
+      'side': exitSide,
+      'quantity': quantity,
+      'tif': 'GTC',
+      if (outsideRth) 'outsideRTH': true,
+    };
+
+    final orderPayload = {
+      'orders': [parentOrder, takeProfitOrder, stopLossOrder]
     };
 
     final uri = _config.baseHttpUri.resolve('iserver/account/$acctId/orders');
@@ -674,6 +897,178 @@ class McpToolRegistry {
     }
   }
 
+  Future<Map<String, dynamic>> _executeGetPortfolioPnl(
+      Map<String, dynamic> args) async {
+    final acctId = args['accountId']?.toString();
+    if (acctId == null || acctId.isEmpty) {
+      return McpResponseBuilder.buildToolErrorResponse(
+          'Missing required argument: accountId');
+    }
+
+    // 1. Fetch Account Summary
+    final summaryUri = _config.baseHttpUri.resolve('portfolio/$acctId/summary');
+    final summaryRes = await _client.get(summaryUri);
+
+    double netLiquidation = 0.0;
+    double unrealizedPnL = 0.0;
+    double realizedPnL = 0.0;
+    double buyingPower = 0.0;
+
+    if (summaryRes.statusCode == 200) {
+      final summaryDecoded = _safeJsonDecode(summaryRes.body);
+      if (summaryDecoded is Map) {
+        netLiquidation = _parseSummaryValue(summaryDecoded['netliquidation']);
+        unrealizedPnL = _parseSummaryValue(summaryDecoded['unrealizedpnl']);
+        realizedPnL = _parseSummaryValue(summaryDecoded['realizedpnl']);
+        buyingPower = _parseSummaryValue(summaryDecoded['buyingpower']);
+      }
+    }
+
+    // 2. Fetch Partitioned Daily PnL
+    final pnlUri =
+        _config.baseHttpUri.resolve('iserver/account/pnl/partitioned');
+    final pnlRes = await _client.get(pnlUri);
+
+    double dailyPnL = 0.0;
+    if (pnlRes.statusCode == 200) {
+      final pnlDecoded = _safeJsonDecode(pnlRes.body);
+      if (pnlDecoded is Map) {
+        for (final entry in pnlDecoded.values) {
+          if (entry is Map && entry['dnl'] != null) {
+            dailyPnL += _parseDouble(entry['dnl']);
+          }
+        }
+      }
+    }
+
+    // 3. Fetch Position Performance Breakdown
+    final positionsUri =
+        _config.baseHttpUri.resolve('portfolio/$acctId/positions/0');
+    final positionsRes = await _client.get(positionsUri);
+
+    final positionsList = <Map<String, dynamic>>[];
+    if (positionsRes.statusCode == 200) {
+      final posDecoded = _safeJsonDecode(positionsRes.body);
+      if (posDecoded is List) {
+        for (final pos in posDecoded) {
+          if (pos is Map) {
+            final symbol = pos['ticker'] ??
+                pos['contractDesc'] ??
+                pos['symbol'] ??
+                pos['conid']?.toString() ??
+                'UNKNOWN';
+            final qty = _parseDouble(pos['position']);
+            final avgCost = _parseDouble(pos['avgCost'] ?? pos['avgPrice']);
+            final marketPrice = _parseDouble(pos['mktPrice'] ?? pos['price']);
+            final marketValue = _parseDouble(pos['mktValue']);
+            final posUnrealized = _parseDouble(pos['unrealizedPnl']);
+            final posRealized = _parseDouble(pos['realizedPnl']);
+
+            positionsList.add({
+              'symbol': symbol,
+              'conid': pos['conid'],
+              'qty': qty,
+              'avgCost': avgCost,
+              'marketPrice': marketPrice,
+              'marketValue': marketValue,
+              'unrealizedPnL': posUnrealized,
+              'realizedPnL': posRealized,
+            });
+          }
+        }
+      }
+    }
+
+    // Auto-reconcile account-level unrealized & realized PnL from positions if top-level summary is 0
+    if (unrealizedPnL == 0.0 && positionsList.isNotEmpty) {
+      unrealizedPnL = positionsList.fold(
+          0.0, (sum, pos) => sum + (pos['unrealizedPnL'] as double? ?? 0.0));
+    }
+    if (realizedPnL == 0.0 && positionsList.isNotEmpty) {
+      realizedPnL = positionsList.fold(
+          0.0, (sum, pos) => sum + (pos['realizedPnL'] as double? ?? 0.0));
+    }
+
+    final pnlSummary = {
+      'account': acctId,
+      'dailyPnL': dailyPnL,
+      'unrealizedPnL': double.parse(unrealizedPnL.toStringAsFixed(2)),
+      'realizedPnL': double.parse(realizedPnL.toStringAsFixed(2)),
+      'netLiquidation': netLiquidation,
+      'buyingPower': buyingPower,
+      'positions': positionsList,
+    };
+
+    return McpResponseBuilder.buildToolSuccessResponse(jsonEncode(pnlSummary));
+  }
+
+  Future<Map<String, dynamic>> _executePreviewOrder(
+      Map<String, dynamic> args) async {
+    final acctId = args['accountId']?.toString();
+    final conid = args['conid'];
+    final side = args['side']?.toString().toUpperCase();
+    final orderType = args['orderType']?.toString().toUpperCase();
+    final quantity = args['quantity'];
+    final price = args['price'];
+    final tif = args['tif']?.toString() ?? 'DAY';
+
+    if (acctId == null ||
+        acctId.isEmpty ||
+        conid == null ||
+        side == null ||
+        orderType == null ||
+        quantity == null) {
+      return McpResponseBuilder.buildToolErrorResponse(
+          'Missing required order parameters. Required: accountId, conid, side, orderType, quantity');
+    }
+
+    if ((orderType == 'LMT' || orderType == 'STP') && price == null) {
+      return McpResponseBuilder.buildToolErrorResponse(
+          'price is required when orderType is $orderType');
+    }
+
+    final whatIfPayload = {
+      'orders': [
+        {
+          'acctId': acctId,
+          'conid': conid,
+          'orderType': orderType,
+          if (price != null) 'price': price,
+          'side': side,
+          'quantity': quantity,
+          'tif': tif,
+        }
+      ]
+    };
+
+    final uri =
+        _config.baseHttpUri.resolve('iserver/account/$acctId/orders/whatif');
+    final res = await _client.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(whatIfPayload),
+    );
+
+    if (res.statusCode == 200) {
+      return McpResponseBuilder.buildToolSuccessResponse(res.body);
+    } else {
+      return _buildErrorFromResponse(res);
+    }
+  }
+
+  double _parseSummaryValue(dynamic item) {
+    if (item is Map && item['amount'] != null) {
+      return _parseDouble(item['amount']);
+    }
+    return _parseDouble(item);
+  }
+
+  double _parseDouble(dynamic val) {
+    if (val == null) return 0.0;
+    if (val is num) return val.toDouble();
+    return double.tryParse(val.toString()) ?? 0.0;
+  }
+
   Future<Map<String, dynamic>> _executeGetOptionChains(
       Map<String, dynamic> args) async {
     final conid = args['conid'];
@@ -783,7 +1178,7 @@ class McpToolRegistry {
         await _client.post(uri, headers: {'Content-Type': 'application/json'});
 
     // Clear client cookies
-    _client.cookies.clear();
+    _client.clearCookies();
 
     if (res.statusCode == 200) {
       return McpResponseBuilder.buildToolSuccessResponse(

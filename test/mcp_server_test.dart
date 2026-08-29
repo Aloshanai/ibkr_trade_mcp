@@ -58,6 +58,9 @@ void main() {
       expect(toolNames, contains('modify_order'));
       expect(toolNames, contains('get_account_summary'));
       expect(toolNames, contains('get_cash_ledger'));
+      expect(toolNames, contains('place_bracket_order'));
+      expect(toolNames, contains('get_portfolio_pnl'));
+      expect(toolNames, contains('preview_order'));
       expect(toolNames, contains('get_option_chains'));
       expect(toolNames, contains('resolve_option_contract'));
       expect(toolNames, contains('ibkr_login'));
@@ -68,6 +71,33 @@ void main() {
       final res = await registry.callTool('non_existent_tool', {});
       expect(res['isError'], isTrue);
       expect(res['content'].first['text'], contains('Unknown tool name'));
+    });
+
+    test(
+        'callTool place_bracket_order returns error if missing required arguments',
+        () async {
+      final res = await registry.callTool('place_bracket_order', {});
+      expect(res['isError'], isTrue);
+      expect(res['content'].first['text'],
+          contains('Missing required arguments for bracket order'));
+    });
+
+    test(
+        'callTool get_portfolio_pnl returns error if missing accountId argument',
+        () async {
+      final res = await registry.callTool('get_portfolio_pnl', {});
+      expect(res['isError'], isTrue);
+      expect(res['content'].first['text'],
+          contains('Missing required argument: accountId'));
+    });
+
+    test(
+        'callTool preview_order returns error if missing required order parameters',
+        () async {
+      final res = await registry.callTool('preview_order', {});
+      expect(res['isError'], isTrue);
+      expect(res['content'].first['text'],
+          contains('Missing required order parameters'));
     });
 
     test('callTool get_option_chains returns error if missing conid argument',
@@ -135,6 +165,13 @@ void main() {
       expect(res['isError'], isFalse);
       expect(res['content'].first['text'],
           contains('Successfully opened browser'));
+    });
+
+    test('callTool ibkr_logout attempts logout and clears cookies safely',
+        () async {
+      final res = await registry.callTool('ibkr_logout', {});
+      expect(res, isA<Map<String, dynamic>>());
+      expect(client.cookies, isEmpty);
     });
   });
 }
