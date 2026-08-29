@@ -75,16 +75,38 @@ class McpToolRegistry {
             },
             'orderType': {
               'type': 'string',
-              'enum': ['LMT', 'MKT', 'STP'],
-              'description': 'Type of order',
+              'enum': ['LMT', 'MKT', 'STP', 'TRAIL', 'TRAIL LIMIT'],
+              'description':
+                  'Type of order (LMT, MKT, STP, TRAIL, or TRAIL LIMIT)',
             },
             'price': {
               'type': 'number',
-              'description': 'Limit price (required for LMT and STP orders)',
+              'description':
+                  'Limit price (required for LMT, STP, and TRAIL LIMIT orders)',
             },
             'quantity': {
               'type': 'number',
               'description': 'Number of shares/contracts',
+            },
+            'auxPrice': {
+              'type': 'number',
+              'description':
+                  'Trailing stop dollar amount (e.g. 5.00 for \$5 trailing stop gap)',
+            },
+            'trailingPercent': {
+              'type': 'number',
+              'description':
+                  'Trailing stop percentage (e.g. 2.5 for 2.5% trailing stop gap)',
+            },
+            'tif': {
+              'type': 'string',
+              'enum': ['DAY', 'GTC', 'IOC'],
+              'description': 'Time in force (defaults to DAY)',
+            },
+            'outsideRth': {
+              'type': 'boolean',
+              'description':
+                  'Allow execution outside regular trading hours (RTH)',
             },
           },
           'required': ['accountId', 'conid', 'side', 'orderType', 'quantity'],
@@ -442,31 +464,63 @@ class McpToolRegistry {
       Map<String, dynamic> args) async {
     final acctId = args['accountId']?.toString();
     final conid = args['conid'];
-    final side = args['side']?.toString();
-    final orderType = args['orderType']?.toString();
+    final side = args['side']?.toString().toUpperCase();
+    final orderType = args['orderType']?.toString().toUpperCase();
     final quantity = args['quantity'];
     final price = args['price'];
+    final auxPrice = args['auxPrice'];
+    final trailingPercent = args['trailingPercent'];
+    final tif = args['tif']?.toString() ?? 'DAY';
+    final outsideRth = args['outsideRth'] == true;
 
     if (acctId == null ||
+        acctId.isEmpty ||
         conid == null ||
         side == null ||
         orderType == null ||
         quantity == null) {
       return McpResponseBuilder.buildToolErrorResponse(
-          'Invalid or missing order parameters');
+          'Invalid or missing order parameters. Required: accountId, conid, side, orderType, quantity');
     }
 
+    if ((orderType == 'LMT' ||
+            orderType == 'STP' ||
+            orderType == 'TRAIL LIMIT') &&
+        price == null) {
+      return McpResponseBuilder.buildToolErrorResponse(
+          'price is required when orderType is $orderType');
+    }
+
+    if ((orderType == 'TRAIL' || orderType == 'TRAIL LIMIT') &&
+        auxPrice == null &&
+        trailingPercent == null) {
+      return McpResponseBuilder.buildToolErrorResponse(
+          'Either auxPrice or trailingPercent is required for $orderType orders');
+    }
+
+    final singleOrder = <String, dynamic>{
+      'acctId': acctId,
+      'conid': conid,
+      'orderType': orderType,
+      if (price != null) 'price': price,
+      if (auxPrice != null) ...{
+        'auxPrice': auxPrice,
+        'trailingAmt': auxPrice,
+        'trailingType': 'amt',
+      },
+      if (trailingPercent != null) ...{
+        'trailingPercent': trailingPercent,
+        'trailingAmt': trailingPercent,
+        'trailingType': '%',
+      },
+      'side': side,
+      'quantity': quantity,
+      'tif': tif,
+      if (outsideRth) 'outsideRTH': true,
+    };
+
     final orderPayload = {
-      'orders': [
-        {
-          'conid': conid,
-          'orderType': orderType,
-          'price': price,
-          'side': side,
-          'quantity': quantity,
-          'tif': 'DAY',
-        }
-      ]
+      'orders': [singleOrder]
     };
 
     final uri = _config.baseHttpUri.resolve('iserver/account/$acctId/orders');
@@ -783,7 +837,7 @@ class McpToolRegistry {
         await _client.post(uri, headers: {'Content-Type': 'application/json'});
 
     // Clear client cookies
-    _client.cookies.clear();
+    _client.clearCookies();
 
     if (res.statusCode == 200) {
       return McpResponseBuilder.buildToolSuccessResponse(
