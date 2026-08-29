@@ -59,11 +59,7 @@ class StdioServerTransport {
     _stdinSubscription = null;
     await _writeSubscription?.cancel();
     _writeSubscription = null;
-    if (!_readController.isClosed) {
-      unawaited(_readController.close());
-    }
-    if (!_writeController.isClosed) {
-      unawaited(_writeController.close());
-    }
+    unawaited(_readController.close());
+    unawaited(_writeController.close());
   }
 }
