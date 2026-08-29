@@ -120,6 +120,14 @@ void main() {
           res['content'].first['text'], contains('Missing required arguments'));
     });
 
+    test('callTool modify_order returns error if missing accountId or orderId',
+        () async {
+      final res = await registry.callTool('modify_order', {});
+      expect(res['isError'], isTrue);
+      expect(
+          res['content'].first['text'], contains('Missing required arguments'));
+    });
+
     test('callTool get_account_summary returns error if missing accountId',
         () async {
       final res = await registry.callTool('get_account_summary', {});
