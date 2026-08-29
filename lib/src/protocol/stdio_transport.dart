@@ -56,8 +56,14 @@ class StdioServerTransport {
   /// Closes subscriptions and controllers.
   Future<void> close() async {
     await _stdinSubscription?.cancel();
+    _stdinSubscription = null;
     await _writeSubscription?.cancel();
-    await _readController.close();
-    await _writeController.close();
+    _writeSubscription = null;
+    if (!_readController.isClosed) {
+      unawaited(_readController.close());
+    }
+    if (!_writeController.isClosed) {
+      unawaited(_writeController.close());
+    }
   }
 }
