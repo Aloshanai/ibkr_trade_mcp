@@ -136,5 +136,13 @@ void main() {
       expect(res['content'].first['text'],
           contains('Successfully opened browser'));
     });
+
+    test('callTool ibkr_logout attempts logout and clears cookies safely',
+        () async {
+      final res = await registry.callTool('ibkr_logout', {});
+      expect(res, isA<Map<String, dynamic>>());
+      // Expect no unhandled UnsupportedError thrown when clearing cookies
+      expect(client.cookies, isEmpty);
+    });
   });
 }

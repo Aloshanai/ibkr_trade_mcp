@@ -783,7 +783,7 @@ class McpToolRegistry {
         await _client.post(uri, headers: {'Content-Type': 'application/json'});
 
     // Clear client cookies
-    _client.cookies.clear();
+    _client.clearCookies();
 
     if (res.statusCode == 200) {
       return McpResponseBuilder.buildToolSuccessResponse(
