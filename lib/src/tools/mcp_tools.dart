@@ -218,6 +218,27 @@ class McpToolRegistry {
               'type': 'number',
               'description': 'Updated order quantity',
             },
+            'conid': {
+              'type': 'integer',
+              'description':
+                  'Contract ID of the security (optional, auto-resolved from active orders if omitted)',
+            },
+            'side': {
+              'type': 'string',
+              'enum': ['BUY', 'SELL'],
+              'description': 'Order side (BUY or SELL)',
+            },
+            'orderType': {
+              'type': 'string',
+              'enum': ['LMT', 'MKT', 'STP'],
+              'description': 'Type of order',
+            },
+            'tif': {
+              'type': 'string',
+              'enum': ['DAY', 'GTC', 'IOC'],
+              'description':
+                  'Time in force (e.g. DAY, GTC, IOC). Defaults to DAY if omitted.',
+            },
           },
           'required': ['accountId', 'orderId'],
         },
@@ -607,8 +628,12 @@ class McpToolRegistry {
       Map<String, dynamic> args) async {
     final acctId = args['accountId']?.toString();
     final orderId = args['orderId']?.toString();
+    var conid = args['conid'];
     final price = args['price'];
     final quantity = args['quantity'];
+    final side = args['side']?.toString().toUpperCase();
+    final orderType = args['orderType']?.toString().toUpperCase();
+    final tif = args['tif']?.toString() ?? 'DAY';
 
     if (acctId == null ||
         acctId.isEmpty ||
@@ -618,9 +643,16 @@ class McpToolRegistry {
           'Missing required arguments: accountId and orderId');
     }
 
-    final modifyPayload = {
-      'price': price,
-      'quantity': quantity,
+    // Auto-lookup conid from working orders if missing from caller args
+    conid ??= await _autoLookupConidForOrder(orderId, acctId);
+
+    final modifyPayload = <String, dynamic>{
+      if (conid != null) 'conid': conid,
+      if (price != null) 'price': price,
+      if (quantity != null) 'quantity': quantity,
+      if (side != null) 'side': side,
+      if (orderType != null) 'orderType': orderType,
+      'tif': tif,
     };
 
     final uri =
@@ -636,6 +668,48 @@ class McpToolRegistry {
     } else {
       return _buildErrorFromResponse(res);
     }
+  }
+
+  Future<dynamic> _autoLookupConidForOrder(String orderId,
+      [String? acctId]) async {
+    try {
+      final uris = [
+        _config.baseHttpUri.resolve('iserver/account/orders'),
+        if (acctId != null && acctId.isNotEmpty)
+          _config.baseHttpUri.resolve('iserver/account/$acctId/orders'),
+      ];
+
+      for (final uri in uris) {
+        final res = await _client.get(uri);
+        if (res.statusCode == 200) {
+          final decoded = _safeJsonDecode(res.body);
+          List ordersList = [];
+          if (decoded is List) {
+            ordersList = decoded;
+          } else if (decoded is Map && decoded['orders'] is List) {
+            ordersList = decoded['orders'] as List;
+          }
+
+          for (final item in ordersList) {
+            if (item is Map) {
+              final id = item['orderId']?.toString() ??
+                  item['order_id']?.toString() ??
+                  item['id']?.toString();
+              if (id == orderId) {
+                final foundConid =
+                    item['conid'] ?? item['conId'] ?? item['conidex'];
+                if (foundConid != null) {
+                  return int.tryParse(foundConid.toString()) ?? foundConid;
+                }
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      McpLogger.error('Failed auto-lookup of conid for order $orderId', e);
+    }
+    return null;
   }
 
   Future<Map<String, dynamic>> _executeGetAccountSummary(
@@ -783,7 +857,7 @@ class McpToolRegistry {
         await _client.post(uri, headers: {'Content-Type': 'application/json'});
 
     // Clear client cookies
-    _client.cookies.clear();
+    _client.clearCookies();
 
     if (res.statusCode == 200) {
       return McpResponseBuilder.buildToolSuccessResponse(
