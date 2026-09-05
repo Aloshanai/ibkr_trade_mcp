@@ -60,6 +60,7 @@ void main() {
       expect(toolNames, contains('get_cash_ledger'));
       expect(toolNames, contains('get_option_chains'));
       expect(toolNames, contains('resolve_option_contract'));
+      expect(toolNames, contains('keep_alive'));
       expect(toolNames, contains('ibkr_login'));
       expect(toolNames, contains('ibkr_logout'));
     });
@@ -68,6 +69,11 @@ void main() {
       final res = await registry.callTool('non_existent_tool', {});
       expect(res['isError'], isTrue);
       expect(res['content'].first['text'], contains('Unknown tool name'));
+    });
+
+    test('callTool keep_alive attempts tickle heartbeat call', () async {
+      final res = await registry.callTool('keep_alive', {});
+      expect(res, isA<Map<String, dynamic>>());
     });
 
     test('callTool get_option_chains returns error if missing conid argument',

@@ -322,6 +322,15 @@ class McpToolRegistry {
         },
       },
       {
+        'name': 'keep_alive',
+        'description':
+            'Send a heartbeat ping (tickle) to the IBKR Client Portal Gateway to extend the active session and prevent authentication timeout.',
+        'inputSchema': {
+          'type': 'object',
+          'properties': {},
+        },
+      },
+      {
         'name': 'ibkr_login',
         'description':
             'Automatically open a web browser pointing to the local IBKR Client Portal Gateway authentication page.',
@@ -379,6 +388,8 @@ class McpToolRegistry {
           return await _executeGetOptionChains(args);
         case 'resolve_option_contract':
           return await _executeResolveOptionContract(args);
+        case 'keep_alive':
+          return await _executeKeepAlive();
         case 'ibkr_login':
           return await _executeIbkrLogin();
         case 'ibkr_logout':
@@ -760,6 +771,17 @@ class McpToolRegistry {
         .resolve('iserver/secdef/info')
         .replace(queryParameters: queryParams);
     final res = await _client.get(uri);
+
+    if (res.statusCode == 200) {
+      return McpResponseBuilder.buildToolSuccessResponse(res.body);
+    } else {
+      return _buildErrorFromResponse(res);
+    }
+  }
+
+  Future<Map<String, dynamic>> _executeKeepAlive() async {
+    final uri = _config.baseHttpUri.resolve('iserver/tickle');
+    final res = await _client.post(uri);
 
     if (res.statusCode == 200) {
       return McpResponseBuilder.buildToolSuccessResponse(res.body);
