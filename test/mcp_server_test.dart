@@ -70,6 +70,44 @@ void main() {
       expect(res['content'].first['text'], contains('Unknown tool name'));
     });
 
+    test('callTool place_order returns error for invalid order parameters',
+        () async {
+      final res = await registry.callTool('place_order', {});
+      expect(res['isError'], isTrue);
+      expect(res['content'].first['text'],
+          contains('Invalid or missing order parameters'));
+    });
+
+    test('callTool place_order TRAIL returns error if missing trailing amount',
+        () async {
+      final res = await registry.callTool('place_order', {
+        'accountId': 'DU12345',
+        'conid': 265598,
+        'side': 'BUY',
+        'orderType': 'TRAIL',
+        'quantity': 10,
+      });
+      expect(res['isError'], isTrue);
+      expect(res['content'].first['text'],
+          contains('Either auxPrice or trailingPercent is required'));
+    });
+
+    test(
+        'callTool place_order TRAIL LIMIT returns error if missing limit price',
+        () async {
+      final res = await registry.callTool('place_order', {
+        'accountId': 'DU12345',
+        'conid': 265598,
+        'side': 'BUY',
+        'orderType': 'TRAIL LIMIT',
+        'quantity': 10,
+        'auxPrice': 5.0,
+      });
+      expect(res['isError'], isTrue);
+      expect(res['content'].first['text'],
+          contains('price is required when orderType is TRAIL LIMIT'));
+    });
+
     test('callTool get_option_chains returns error if missing conid argument',
         () async {
       final res = await registry.callTool('get_option_chains', {});
