@@ -1,6 +1,6 @@
 name: ibkr_trade_mcp
 description: Model Context Protocol (MCP) server for Interactive Brokers.
-version: 0.1.0
+version: 0.1.2
 homepage: https://github.com/Aloshanai/ibkr_trade_mcp
 repository: https://github.com/Aloshanai/ibkr_trade_mcp
 issue_tracker: https://github.com/Aloshanai/ibkr_trade_mcp/issues
